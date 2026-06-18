@@ -180,6 +180,26 @@ export default function MasterCVPage() {
     if (next && versions.length === 0) await loadVersions();
   }
 
+  async function _downloadCv(format: "pdf" | "docx") {
+    const { createClient } = await import("@/lib/supabase");
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+    const url = `${base}/api/v1/export/cv/${format}`;
+    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { showToast("Download fejlede", false); return; }
+    const blob = await res.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `master_cv.${format}`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  async function downloadCvPdf() { await _downloadCv("pdf"); }
+  async function downloadCvDocx() { await _downloadCv("docx"); }
+
   // ── Loading ─────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -257,6 +277,16 @@ export default function MasterCVPage() {
             {content && (
               <Button variant="outline" size="sm" onClick={copy}>
                 {copied ? "Kopieret!" : "Kopiér"}
+              </Button>
+            )}
+            {content && (
+              <Button variant="outline" size="sm" onClick={downloadCvPdf}>
+                PDF ↓
+              </Button>
+            )}
+            {content && (
+              <Button variant="outline" size="sm" onClick={downloadCvDocx}>
+                DOCX ↓
               </Button>
             )}
             {content && (
