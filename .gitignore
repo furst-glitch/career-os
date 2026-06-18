@@ -42,3 +42,8 @@ Thumbs.db
 *.pem
 *.key
 secrets/
+*KRITISK*
+*nøgler*
+
+# Build artifacts
+frontend/tsconfig.tsbuildinfo
