@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str = ""
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    # Regex for dynamiske origins — dækker alle Vercel preview-deployments automatisk
+    cors_allow_origin_regex: str = r"https?://(.*\.vercel\.app|localhost(:\d+)?)"
 
     @property
     def has_openai(self) -> bool:
