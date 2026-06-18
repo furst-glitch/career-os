@@ -3,6 +3,8 @@ Experience Service — CRUD for alle 7 kandidat-profil-sektioner.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from supabase import Client
 
 
@@ -152,7 +154,7 @@ class ExperienceService:
     def resolve_gap(self, gap_id: str) -> None:
         self.db.table("profile_gaps").update({
             "is_resolved": True,
-            "resolved_at": "now()",
+            "resolved_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", gap_id).execute()
 
     def add_achievements_from_discovery(self, user_id: str, achievements: list[dict]) -> None:
