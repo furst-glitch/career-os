@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Normaliser: fjern eventuel /api/v1 suffix, tilføj altid /api/v1
+// Håndterer både NEXT_PUBLIC_API_URL=http://localhost:8000
+// og NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+const _base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+const API_URL = `${_base}/api/v1`;
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const supabase = createClient();
