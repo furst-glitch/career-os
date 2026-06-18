@@ -3,6 +3,7 @@ CV Service — filhåndtering, tekst-ekstraktion, profilopbygning og Master CV-g
 """
 from __future__ import annotations
 
+import hashlib
 import io
 from typing import Any
 
@@ -277,10 +278,66 @@ class CVService:
         }
 
     async def save_master_cv_content(self, user_id: str, content: str) -> None:
+        row = self.db.table("master_cvs").select("language").eq("user_id", user_id).limit(1).execute()
+        language = (row.data[0].get("language") or "da") if row.data else "da"
         self.db.table("master_cvs").update({
             "raw_content": content,
             "is_generated": True,
         }).eq("user_id", user_id).execute()
+        try:
+            self.create_version(user_id, content, "ai", language)
+        except Exception:
+            pass  # Version-fejl stopper ikke generate-flowet
+
+    # ─── Versioner ────────────────────────────────────────────────────────────
+
+    def create_version(
+        self, user_id: str, content: str, generated_by: str = "user", language: str = "da"
+    ) -> dict:
+        row = (
+            self.db.table("document_versions")
+            .select("version_number")
+            .eq("user_id", user_id)
+            .eq("document_type", "master_cv")
+            .order("version_number", desc=True)
+            .limit(1)
+            .execute()
+        )
+        next_num = (row.data[0]["version_number"] + 1) if row.data else 1
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        result = self.db.table("document_versions").insert({
+            "user_id": user_id,
+            "document_type": "master_cv",
+            "version_number": next_num,
+            "title": f"Master CV v{next_num}",
+            "content": content,
+            "content_hash": content_hash,
+            "language": language,
+            "generated_by": generated_by,
+        }).execute()
+        return result.data[0]
+
+    def list_versions(self, user_id: str) -> list[dict]:
+        result = (
+            self.db.table("document_versions")
+            .select("id, version_number, title, language, generated_by, created_at")
+            .eq("user_id", user_id)
+            .eq("document_type", "master_cv")
+            .order("version_number", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    def get_version_content(self, version_id: str, user_id: str) -> str | None:
+        result = (
+            self.db.table("document_versions")
+            .select("content")
+            .eq("id", version_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0]["content"] if result.data else None
 
     @staticmethod
     def _parse_date(value: str | None) -> str | None:

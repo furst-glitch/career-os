@@ -123,14 +123,17 @@ async def get_master_cv_content(
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
-    """Henter den senest genererede Master CV-tekst."""
-    result = supabase.table("master_cvs").select("raw_content, is_generated, updated_at").eq("user_id", user["id"]).execute()
+    """Henter den senest genererede Master CV-tekst + sprog."""
+    result = supabase.table("master_cvs").select("raw_content, is_generated, language, updated_at").eq("user_id", user["id"]).execute()
     if not result.data:
         raise HTTPException(404, "Ingen Master CV fundet")
     mcv = result.data[0]
-    if not mcv.get("is_generated") or not mcv.get("raw_content"):
-        raise HTTPException(404, "Master CV er endnu ikke genereret — kald POST /cv/master/generate")
-    return {"content": mcv["raw_content"], "updated_at": mcv["updated_at"]}
+    return {
+        "content": mcv.get("raw_content") or "",
+        "is_generated": bool(mcv.get("is_generated")),
+        "language": mcv.get("language") or "da",
+        "updated_at": mcv.get("updated_at"),
+    }
 
 
 @router.post("/master/generate")
@@ -158,10 +161,48 @@ async def update_master_cv(
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
-    """Opdater felter på master_cv-tabellen (target_title, summary, language)."""
-    allowed = {"target_title", "summary", "language"}
+    """Opdater felter på master_cv-tabellen (target_title, summary, language, raw_content)."""
+    allowed = {"target_title", "summary", "language", "raw_content"}
     update = {k: v for k, v in body.items() if k in allowed}
     if not update:
         raise HTTPException(400, "Ingen gyldige felter at opdatere")
     supabase.table("master_cvs").update(update).eq("user_id", user["id"]).execute()
     return {"status": "updated"}
+
+
+@router.get("/master/versions")
+async def list_versions(
+    user: dict = Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """Versionshistorik for Master CV."""
+    return CVService(supabase).list_versions(user["id"])
+
+
+@router.post("/master/version", status_code=201)
+async def save_version(
+    user: dict = Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """Gem nuværende Master CV-indhold som navngiven version."""
+    result = supabase.table("master_cvs").select("raw_content, language").eq("user_id", user["id"]).limit(1).execute()
+    if not result.data or not result.data[0].get("raw_content"):
+        raise HTTPException(400, "Ingen indhold at gemme som version")
+    cv = result.data[0]
+    version = CVService(supabase).create_version(
+        user["id"], cv["raw_content"], "user", cv.get("language") or "da"
+    )
+    return version
+
+
+@router.get("/master/versions/{version_id}")
+async def get_version(
+    version_id: str,
+    user: dict = Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """Hent indhold fra en specifik version (til gendannelse)."""
+    content = CVService(supabase).get_version_content(version_id, user["id"])
+    if content is None:
+        raise HTTPException(404, "Version ikke fundet")
+    return {"content": content}
