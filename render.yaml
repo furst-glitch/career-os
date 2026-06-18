@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: careeros-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install .
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      # App
+      - key: DEBUG
+        value: false
+      - key: SECRET_KEY
+        generateValue: true         # Render genererer automatisk
+
+      # Supabase — udfyld manuelt i Render dashboard
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # Kryptering (Fernet-nøgle) — generér manuelt:
+      # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: ENCRYPTION_KEY
+        sync: false
+
+      # CORS — sæt til din frontend URL, f.eks. ["https://careeros.vercel.app"]
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Python runtime
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+
+      # AI providers — valgfri (BYOK-model: brugere bruger egne nøgler)
+      # - key: OPENAI_API_KEY
+      #   sync: false
+      # - key: ANTHROPIC_API_KEY
+      #   sync: false
+
+      # Stripe — valgfri
+      # - key: STRIPE_SECRET_KEY
+      #   sync: false
+      # - key: STRIPE_WEBHOOK_SECRET
+      #   sync: false
