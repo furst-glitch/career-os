@@ -271,6 +271,79 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch }: {
   );
 }
 
+// ── Kanban ────────────────────────────────────────────────────────────────────
+
+const KANBAN_COLS: { id: string; label: string; statuses: (string | null)[] }[] = [
+  { id: "saved",       label: "Gemte",    statuses: [null] },
+  { id: "preparing",   label: "Forbereder",   statuses: ["draft", "preparing", "ready"] },
+  { id: "applied",     label: "Ansøgt",       statuses: ["submitted", "screening"] },
+  { id: "interviewing",label: "Interview",    statuses: ["interviewing"] },
+  { id: "outcome",     label: "Udfald",       statuses: ["offer", "hired", "rejected", "withdrawn"] },
+];
+
+function KanbanBoard({ jobs, onToggleSave, onDelete, onRefreshMatch }: {
+  jobs: Job[];
+  onToggleSave: (id: string) => void;
+  onDelete: (id: string) => void;
+  onRefreshMatch: (id: string) => void;
+}) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-4">
+      {KANBAN_COLS.map(col => {
+        const colJobs = jobs.filter(j =>
+          col.statuses.includes(j.pipeline_status ?? null)
+        );
+        return (
+          <div key={col.id} className="flex w-64 shrink-0 flex-col gap-2">
+            <div className="flex items-center justify-between rounded-t-lg bg-slate-100 px-3 py-2">
+              <span className="text-sm font-semibold text-slate-700">{col.label}</span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-500">{colJobs.length}</span>
+            </div>
+            <div className="flex flex-col gap-2 min-h-24">
+              {colJobs.map(job => (
+                <div key={job.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{job.title}</p>
+                      <p className="truncate text-xs text-slate-500">{job.company}</p>
+                    </div>
+                    <MatchBadge score={job.match_score} />
+                  </div>
+                  {job.pipeline_status && (
+                    <span className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[job.pipeline_status] ?? "bg-slate-100 text-slate-600"}`}>
+                      {STATUS_LABELS[job.pipeline_status]}
+                    </span>
+                  )}
+                  <div className="mt-2 flex items-center gap-1 border-t border-slate-100 pt-2">
+                    {job.url && (
+                      <a href={job.url} target="_blank" rel="noopener noreferrer"
+                        className="rounded px-2 py-0.5 text-xs text-blue-600 hover:bg-blue-50">
+                        Vis
+                      </a>
+                    )}
+                    <button
+                      onClick={() => onToggleSave(job.id)}
+                      className={`text-sm ${job.is_saved ? "text-yellow-500" : "text-slate-300 hover:text-yellow-400"}`}
+                      title={job.is_saved ? "Fjern fra gemte" : "Gem job"}
+                    >★</button>
+                    <div className="flex-1" />
+                    <button onClick={() => onDelete(job.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
+                  </div>
+                </div>
+              ))}
+              {colJobs.length === 0 && (
+                <div className="rounded-lg border-2 border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400">
+                  Ingen jobs
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 type FilterTab = "alle" | "gemt" | "aktiv" | "afsluttet";
@@ -283,6 +356,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [tab, setTab] = useState<FilterTab>("alle");
+  const [view, setView] = useState<"list" | "kanban">("list");
   const [toast, setToast] = useState<string | null>(null);
 
   function showToast(msg: string) {
@@ -354,12 +428,30 @@ export default function JobsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Jobs</h1>
           <p className="mt-1 text-sm text-slate-500">Spor jobmuligheder og se dit match mod din karriereprofil</p>
         </div>
-        <button
-          onClick={() => setShowForm(v => !v)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
-          {showForm ? "Luk" : "+ Tilføj job"}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50">
+            <button
+              onClick={() => setView("list")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${view === "list" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              title="Listevisning"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+            <button
+              onClick={() => setView("kanban")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${view === "kanban" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              title="Kanban"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="5" height="18" rx="1"/><rect x="10" y="3" width="5" height="12" rx="1"/><rect x="17" y="3" width="5" height="15" rx="1"/></svg>
+            </button>
+          </div>
+          <button
+            onClick={() => setShowForm(v => !v)}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            {showForm ? "Luk" : "+ Tilføj job"}
+          </button>
+        </div>
       </div>
 
       {/* Add form */}
@@ -370,26 +462,35 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-        {(["alle", "gemt", "aktiv", "afsluttet"] as FilterTab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 rounded-lg py-2 text-sm font-medium capitalize transition-colors ${
-              tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-            <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-xs font-semibold text-slate-600">
-              {counts[t]}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* Tabs — hidden in kanban mode */}
+      {view === "list" && (
+        <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+          {(["alle", "gemt", "aktiv", "afsluttet"] as FilterTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 rounded-lg py-2 text-sm font-medium capitalize transition-colors ${
+                tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+              <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-xs font-semibold text-slate-600">
+                {counts[t]}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      {/* Job list */}
-      {filtered.length === 0 ? (
+      {/* Kanban view */}
+      {view === "kanban" ? (
+        <KanbanBoard
+          jobs={jobs}
+          onToggleSave={handleToggleSave}
+          onDelete={handleDelete}
+          onRefreshMatch={handleRefreshMatch}
+        />
+      ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 py-16 text-center">
           <p className="text-2xl">💼</p>
           <p className="mt-3 font-medium text-slate-700">Ingen jobs her endnu</p>
