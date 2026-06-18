@@ -33,7 +33,16 @@ export default function CVUploadPage() {
   const [fileName, setFileName] = useState<string | null>(null);
 
   async function uploadFile(file: File) {
-    if (!ACCEPTED.includes(file.type)) {
+    const EXT_MAP: Record<string, string> = {
+      pdf: "application/pdf",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      txt: "text/plain",
+    };
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const effectiveType = file.type || EXT_MAP[ext] || "";
+
+    if (!ACCEPTED.includes(effectiveType)) {
       setError("Kun PDF, DOCX og TXT understøttes.");
       return;
     }

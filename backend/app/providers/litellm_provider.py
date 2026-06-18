@@ -1,9 +1,14 @@
 """
-LiteLLM provider med budget-check og automatisk usage-logging.
+LiteLLM provider med BYOK-first key resolution, budget-check og usage-logging.
 Alle AI-kald i CareerOS skal gå igennem denne klasse.
+
+Key resolution order:
+  1. Brugerens egen nøgle (BYOK) — bruges hvis tilgængelig
+  2. System-nøgle fra .env — fallback til SaaS-mode
+  3. Ingen nøgle → NoProviderKeyError
 """
 import time
-from typing import Any, AsyncIterator
+from typing import Any
 
 from app.core.config import settings
 from app.core.deps import get_supabase_admin
@@ -14,10 +19,14 @@ class BudgetExceededError(Exception):
     pass
 
 
+class NoProviderKeyError(Exception):
+    pass
+
+
 class LiteLLMProvider:
-    def __init__(self, user_id: str, used_user_key: bool = False) -> None:
+    def __init__(self, user_id: str) -> None:
         self.user_id = user_id
-        self.used_user_key = used_user_key
+        self._used_user_key = False
         self.supabase = get_supabase_admin()
 
     async def _get_agent_config(self, agent_name: str) -> dict:
@@ -31,7 +40,7 @@ class LiteLLMProvider:
         return result.data or {}
 
     def _check_budget(self) -> None:
-        if self.used_user_key:
+        if self._used_user_key:
             return
 
         result = (
@@ -54,28 +63,67 @@ class LiteLLMProvider:
                 f"Månedligt AI-budget overskredet ({spend:.2f} / {limit:.2f} USD)"
             )
 
+    async def _get_user_default_provider(self) -> str | None:
+        result = (
+            self.supabase.table("user_profiles")
+            .select("default_ai_provider")
+            .eq("user_id", self.user_id)
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            return result.data[0].get("default_ai_provider")
+        return None
+
     async def _resolve_model(self, agent_name: str, provider: str | None = None) -> tuple[str, str]:
         config = await self._get_agent_config(agent_name)
         overrides = config.get("agent_configurations") or [{}]
         override = overrides[0] if overrides else {}
 
-        resolved_provider = override.get("provider_override") or config.get("default_provider", "openai")
+        resolved_provider = (
+            provider
+            or override.get("provider_override")
+            or await self._get_user_default_provider()
+            or config.get("default_provider", "openai")
+        )
         resolved_model = override.get("model_override") or config.get("default_model", "gpt-4o")
-
-        if provider:
-            resolved_provider = provider
 
         return resolved_provider, resolved_model
 
-    async def _get_api_key(self, provider: str) -> str | None:
-        if self.used_user_key:
-            return await KeyManager.get_key(self.user_id, provider)
+    async def _resolve_api_key(self, provider: str) -> tuple[str | None, str | None]:
+        """
+        Returnerer (api_key, api_base).
+        BYOK-first: brugerens nøgle har altid forrang over system-nøgler.
+        Ollama bruger api_base i stedet for api_key.
+        """
+        if provider == "ollama":
+            user_url = await KeyManager.get_key(self.user_id, "ollama")
+            base_url = user_url or settings.ollama_base_url
+            if not base_url:
+                raise NoProviderKeyError(
+                    "Ingen Ollama endpoint konfigureret. Tilføj din Ollama URL under AI-udbydere."
+                )
+            self._used_user_key = bool(user_url)
+            return None, base_url
 
-        key_map = {
+        user_key = await KeyManager.get_key(self.user_id, provider)
+        if user_key:
+            self._used_user_key = True
+            return user_key, None
+
+        system_key_map = {
             "openai": settings.openai_api_key,
             "anthropic": settings.anthropic_api_key,
         }
-        return key_map.get(provider)
+        system_key = system_key_map.get(provider)
+        if system_key:
+            self._used_user_key = False
+            return system_key, None
+
+        raise NoProviderKeyError(
+            f"Ingen API-nøgle fundet for '{provider}'. "
+            "Tilføj din nøgle under Indstillinger → AI-udbydere."
+        )
 
     async def complete(
         self,
@@ -87,32 +135,47 @@ class LiteLLMProvider:
     ) -> Any:
         import litellm
 
+        resolved_provider, model = await self._resolve_model(agent_name, provider)
+        api_key, api_base = await self._resolve_api_key(resolved_provider)
+
         self._check_budget()
 
-        resolved_provider, model = await self._resolve_model(agent_name, provider)
-        api_key = await self._get_api_key(resolved_provider)
+        if resolved_provider == "ollama":
+            litellm_model = f"ollama/{model}"
+        elif resolved_provider == "openai":
+            litellm_model = model
+        else:
+            litellm_model = f"{resolved_provider}/{model}"
 
-        litellm_model = f"{resolved_provider}/{model}" if resolved_provider != "openai" else model
+        call_kwargs: dict[str, Any] = {
+            "model": litellm_model,
+            "messages": messages,
+            "stream": stream,
+            **kwargs,
+        }
+        if api_key:
+            call_kwargs["api_key"] = api_key
+        if api_base:
+            call_kwargs["api_base"] = api_base
 
         start = time.time()
-        response = await litellm.acompletion(
-            model=litellm_model,
-            messages=messages,
-            api_key=api_key,
-            stream=stream,
-            **kwargs,
-        )
-        latency_ms = int((time.time() - start) * 1000)
+        response = await litellm.acompletion(**call_kwargs)
+        self._latency_ms = int((time.time() - start) * 1000)
 
         return response
 
     async def embed(self, text: str) -> list[float]:
         import litellm
 
-        api_key = await self._get_api_key("openai")
+        api_key, _ = await self._resolve_api_key("openai")
+
         response = await litellm.aembedding(
             model="text-embedding-3-small",
             input=text,
             api_key=api_key,
         )
         return response.data[0]["embedding"]
+
+    @property
+    def used_user_key(self) -> bool:
+        return self._used_user_key

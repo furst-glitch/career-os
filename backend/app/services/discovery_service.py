@@ -12,12 +12,13 @@ import asyncio
 import json
 from typing import AsyncGenerator
 
-import litellm
 from supabase import Client
 
+from app.providers.litellm_provider import LiteLLMProvider
 from app.services.experience_service import ExperienceService
 
-DISCOVERY_MODEL = "gpt-4o"
+COACH_AGENT = "career_coach_agent"
+CV_AGENT = "cv_agent"
 
 DISCOVERY_SYSTEM_TEMPLATE = """Du er en erfaren karriererådgiver der hjælper {name} med at afdække sin fulde karriereprofil.
 
@@ -182,9 +183,10 @@ class DiscoveryService:
 
         full_response = ""
         try:
-            response = await litellm.acompletion(
-                model=DISCOVERY_MODEL,
-                messages=messages,
+            llm = LiteLLMProvider(user_id)
+            response = await llm.complete(
+                COACH_AGENT,
+                messages,
                 stream=True,
                 temperature=0.7,
                 max_tokens=400,
@@ -260,9 +262,10 @@ class DiscoveryService:
 
         full_response = ""
         try:
-            response = await litellm.acompletion(
-                model=DISCOVERY_MODEL,
-                messages=messages,
+            llm = LiteLLMProvider(user_id)
+            response = await llm.complete(
+                COACH_AGENT,
+                messages,
                 stream=True,
                 temperature=0.7,
                 max_tokens=1024,
@@ -363,9 +366,10 @@ class DiscoveryService:
         ]
 
         full_cv = ""
-        response = await litellm.acompletion(
-            model=DISCOVERY_MODEL,
-            messages=messages,
+        llm = LiteLLMProvider(user_id)
+        response = await llm.complete(
+            CV_AGENT,
+            messages,
             stream=True,
             temperature=0.4,
             max_tokens=3000,

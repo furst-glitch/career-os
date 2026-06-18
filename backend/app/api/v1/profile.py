@@ -32,6 +32,28 @@ def _svc(supabase) -> ExperienceService:
     return ExperienceService(supabase)
 
 
+# ── Educations ────────────────────────────────────────────────────────────────
+
+@router.get("/educations")
+async def list_educations(user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).list_educations(user["id"])
+
+
+@router.post("/educations", status_code=201)
+async def create_education(body: dict, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).create_education(user["id"], body)
+
+
+@router.put("/educations/{education_id}")
+async def update_education(education_id: str, body: dict, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).update_education(education_id, body)
+
+
+@router.delete("/educations/{education_id}", status_code=204)
+async def delete_education(education_id: str, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    _svc(supabase).delete_education(education_id)
+
+
 # ── Experiences ──────────────────────────────────────────────────────────────
 
 @router.get("/experiences")

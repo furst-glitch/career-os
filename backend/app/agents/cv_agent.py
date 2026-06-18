@@ -8,9 +8,8 @@ import json
 import re
 import time
 
-import litellm
-
 from app.agents.base import AgentResult, AgentUsage, BaseAgent
+from app.providers.litellm_provider import LiteLLMProvider
 
 PARSE_SYSTEM_PROMPT = """Du er en præcis CV-analysator. Analyser CV-teksten og returner UDELUKKENDE et JSON-objekt.
 
@@ -153,35 +152,35 @@ class CVAgent(BaseAgent):
                 metadata={"parsed_data": {}, "gaps": [], "error": "Ingen tekst at analysere"},
             )
 
-        start = time.time()
-        model = self._resolve_model()
-
         messages = [
             {"role": "system", "content": PARSE_SYSTEM_PROMPT},
             {"role": "user", "content": f"Analyser dette CV:\n\n{raw_text[:12000]}"},
         ]
 
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
+        llm = LiteLLMProvider(self.user_id)
+        start = time.time()
+        response = await llm.complete(
+            self.name,
+            messages,
             response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=4096,
         )
-
         latency_ms = int((time.time() - start) * 1000)
+
         raw_json = response.choices[0].message.content or "{}"
         parsed = self._safe_parse(raw_json)
 
+        resolved_provider, resolved_model = await llm._resolve_model(self.name)
         usage = AgentUsage(
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
-            model=model,
-            provider="openai",
+            model=resolved_model,
+            provider=resolved_provider,
             latency_ms=latency_ms,
         )
-        await self.log_usage(usage, operation="cv_parse")
+        await self.log_usage(usage, operation="cv_parse", used_user_key=llm.used_user_key)
 
         return AgentResult(
             content=raw_json,
@@ -196,7 +195,6 @@ class CVAgent(BaseAgent):
         open_gaps: list[str],
     ) -> dict:
         """Ekstraher strukturerede facts efter én udveksling i discovery-interview."""
-        model = self._resolve_model()
         messages = [
             {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
             {
@@ -209,21 +207,16 @@ class CVAgent(BaseAgent):
             },
         ]
 
-        response = await litellm.acompletion(
-            model=model,
-            messages=messages,
+        llm = LiteLLMProvider(self.user_id)
+        response = await llm.complete(
+            self.name,
+            messages,
             response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=1024,
         )
 
         return self._safe_parse(response.choices[0].message.content or "{}")
-
-    def _resolve_model(self) -> str:
-        cfg = self.config
-        overrides = (cfg.get("agent_configurations") or [{}])
-        override = overrides[0] if overrides else {}
-        return override.get("model_override") or cfg.get("default_model", "gpt-4o")
 
     @staticmethod
     def _safe_parse(raw: str) -> dict:

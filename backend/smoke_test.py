@@ -106,7 +106,10 @@ def main():
     print("\n── API Routes ──────────────────────────")
     try:
         from app.main import app
-        routes = {r.path for r in app.routes}
+
+        # OpenAPI-skemaet indeholder alle registrerede routes
+        schema = app.openapi()
+        routes = set(schema.get("paths", {}).keys())
 
         expected = [
             "/api/v1/cv/upload",

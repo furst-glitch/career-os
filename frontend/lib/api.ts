@@ -44,10 +44,20 @@ export async function apiDelete(path: string): Promise<void> {
   if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
 }
 
+const EXT_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
+};
+
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
   const headers = await getAuthHeader();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mime = file.type || EXT_MIME[ext] || "application/octet-stream";
+  const fileWithType = mime !== file.type ? new File([file], file.name, { type: mime }) : file;
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", fileWithType);
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers, // Don't set Content-Type — browser adds boundary automatically

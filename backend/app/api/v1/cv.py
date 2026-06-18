@@ -6,6 +6,8 @@ GET  /cv/master               Hent komplet profil-data
 GET  /cv/master/content       Hent genereret Master CV-tekst
 POST /cv/master/generate      Generer Master CV (SSE streaming)
 """
+import os
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -22,6 +24,12 @@ ALLOWED_MIME_TYPES = {
     "application/msword",
     "text/plain",
 }
+EXT_MIME_MAP = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".txt": "text/plain",
+}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
@@ -36,8 +44,11 @@ async def upload_cv(
     Parser det med AI, populerer profil-tabeller og opretter en discovery-session.
     Returnerer: { upload_id, session_id, parsed_sections, gaps }
     """
-    # Validering
+    # Validering — fald tilbage på extension hvis browser ikke sender korrekt MIME-type
     mime = file.content_type or "application/octet-stream"
+    if mime not in ALLOWED_MIME_TYPES and file.filename:
+        ext = os.path.splitext(file.filename)[1].lower()
+        mime = EXT_MIME_MAP.get(ext, mime)
     if mime not in ALLOWED_MIME_TYPES:
         raise HTTPException(415, f"Filtype ikke understøttet: {mime}")
 

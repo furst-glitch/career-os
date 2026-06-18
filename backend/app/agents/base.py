@@ -52,7 +52,7 @@ class BaseAgent(ABC):
         ).execute()
         return result.data or ""
 
-    async def log_usage(self, usage: AgentUsage, operation: str = "") -> None:
+    async def log_usage(self, usage: AgentUsage, operation: str = "", used_user_key: bool = False) -> None:
         agent_id = self.config.get("id")
         self.supabase.table("ai_usage").insert({
             "user_id": self.user_id,
@@ -65,7 +65,7 @@ class BaseAgent(ABC):
             "total_tokens": usage.total_tokens,
             "cost_usd": usage.cost_usd,
             "latency_ms": usage.latency_ms,
-            "used_user_key": False,
+            "used_user_key": used_user_key,
         }).execute()
 
     @abstractmethod

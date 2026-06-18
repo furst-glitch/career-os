@@ -14,6 +14,7 @@ from app.api.v1 import (
     billing,
     gdpr,
     profile,
+    providers,
 )
 
 api_router = APIRouter()
@@ -32,3 +33,4 @@ api_router.include_router(salary.router)
 api_router.include_router(review.router)
 api_router.include_router(billing.router)
 api_router.include_router(gdpr.router)
+api_router.include_router(providers.router)
