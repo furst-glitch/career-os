@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -20,6 +20,13 @@ interface Prefs {
   role_types:        string[];
   remote_preference: string;
   ai_preferences:    Record<string, string>;
+}
+
+interface ProviderInfo {
+  provider: string;
+  key_hint: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -73,9 +80,191 @@ function TagInput({ value, onChange, placeholder }: { value: string[]; onChange:
   );
 }
 
+// ── API Keys Section ──────────────────────────────────────────────────────────
+
+const PROVIDERS = [
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    hint: "Begynder med sk-ant-…",
+    placeholder: "sk-ant-api03-…",
+    docs: "https://console.anthropic.com/account/keys",
+    models: "Claude Opus 4, Claude Sonnet 4",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    hint: "Begynder med sk-…",
+    placeholder: "sk-proj-…",
+    docs: "https://platform.openai.com/api-keys",
+    models: "GPT-4o, GPT-4o Mini",
+  },
+] as const;
+
+type ProviderId = typeof PROVIDERS[number]["id"];
+
+function ApiKeysTab() {
+  const [configured, setConfigured] = useState<Record<string, ProviderInfo>>({});
+  const [inputs, setInputs] = useState<Record<ProviderId, string>>({ anthropic: "", openai: "" });
+  const [saving, setSaving] = useState<Record<ProviderId, boolean>>({ anthropic: false, openai: false });
+  const [deleting, setDeleting] = useState<Record<ProviderId, boolean>>({ anthropic: false, openai: false });
+  const [feedback, setFeedback] = useState<Record<ProviderId, { ok: boolean; msg: string } | null>>({ anthropic: null, openai: null });
+  const [loading, setLoading] = useState(true);
+
+  async function loadProviders() {
+    try {
+      const { providers } = await apiGet<{ providers: ProviderInfo[] }>("/providers");
+      const map: Record<string, ProviderInfo> = {};
+      for (const p of providers) map[p.provider] = p;
+      setConfigured(map);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadProviders(); }, []);
+
+  function setFb(provider: ProviderId, ok: boolean, msg: string) {
+    setFeedback(prev => ({ ...prev, [provider]: { ok, msg } }));
+    setTimeout(() => setFeedback(prev => ({ ...prev, [provider]: null })), 4000);
+  }
+
+  async function saveKey(provider: ProviderId) {
+    const key = inputs[provider].trim();
+    if (!key) return;
+    setSaving(prev => ({ ...prev, [provider]: true }));
+    try {
+      await apiPost("/providers", { provider, key });
+      setInputs(prev => ({ ...prev, [provider]: "" }));
+      await loadProviders();
+      setFb(provider, true, "API-nøgle gemt");
+    } catch {
+      setFb(provider, false, "Kunne ikke gemme — tjek at nøglen er korrekt");
+    } finally {
+      setSaving(prev => ({ ...prev, [provider]: false }));
+    }
+  }
+
+  async function deleteKey(provider: ProviderId) {
+    setDeleting(prev => ({ ...prev, [provider]: true }));
+    try {
+      await apiDelete(`/providers/${provider}`);
+      await loadProviders();
+      setFb(provider, true, "API-nøgle fjernet");
+    } catch {
+      setFb(provider, false, "Kunne ikke fjerne nøglen");
+    } finally {
+      setDeleting(prev => ({ ...prev, [provider]: false }));
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+        <p className="text-sm font-medium text-blue-800">Bring Your Own Key (BYOK)</p>
+        <p className="mt-1 text-xs text-slate-600">
+          Dine API-nøgler krypteres med AES-256 og gemmes sikkert. Ingen CareerOS-medarbejder har adgang til dem.
+          Nøglerne bruges direkte i dine AI-kald — du betaler selv til udbyderen.
+        </p>
+      </div>
+
+      {PROVIDERS.map(p => {
+        const info = configured[p.id];
+        const fb = feedback[p.id];
+        return (
+          <Card key={p.id}>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>{p.label}</span>
+                {info ? (
+                  <span className="flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    Konfigureret — …{info.key_hint}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-500">
+                    Ikke konfigureret
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+
+            <div className="mt-4 space-y-4">
+              <p className="text-xs text-slate-500">Modeller: {p.models}</p>
+
+              {info ? (
+                <div className="flex items-center gap-3">
+                  <p className="flex-1 text-sm text-slate-600">
+                    Aktiv nøgle: <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">…{info.key_hint}</code>
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={deleting[p.id]}
+                    onClick={() => deleteKey(p.id)}
+                  >
+                    Fjern nøgle
+                  </Button>
+                </div>
+              ) : (
+                <F label={`${p.label} API-nøgle`} hint={p.hint}>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      className={I + " flex-1 font-mono text-xs"}
+                      placeholder={p.placeholder}
+                      value={inputs[p.id]}
+                      onChange={e => setInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      onKeyDown={e => { if (e.key === "Enter") saveKey(p.id); }}
+                    />
+                    <Button
+                      size="sm"
+                      loading={saving[p.id]}
+                      disabled={!inputs[p.id].trim()}
+                      onClick={() => saveKey(p.id)}
+                    >
+                      Gem
+                    </Button>
+                  </div>
+                </F>
+              )}
+
+              {fb && (
+                <p className={`text-xs font-medium ${fb.ok ? "text-green-600" : "text-red-600"}`}>
+                  {fb.ok ? "✓" : "✗"} {fb.msg}
+                </p>
+              )}
+            </div>
+          </Card>
+        );
+      })}
+
+      <div className="rounded-lg border border-slate-100 bg-slate-50 p-4 text-xs text-slate-500">
+        Du kan hente dine API-nøgler hos{" "}
+        <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noreferrer" className="text-blue-600 underline">Anthropic Console</a>
+        {" "}og{" "}
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="text-blue-600 underline">OpenAI Platform</a>.
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = "job" | "ai";
+type Tab = "job" | "ai" | "keys";
 
 export default function SettingsPage() {
   const [tab, setTab]       = useState<Tab>("job");
@@ -128,14 +317,15 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Indstillinger</h1>
           <p className="mt-1 text-sm text-slate-500">Dine karrierepræferencer bruges af alle agenter til personaliserede anbefalinger</p>
         </div>
-        <Button loading={saving} onClick={save}>Gem præferencer</Button>
+        {tab !== "keys" && <Button loading={saving} onClick={save}>Gem præferencer</Button>}
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
         {([
-          { key: "job", label: "Jobpræferencer" },
-          { key: "ai",  label: "AI-præferencer" },
+          { key: "job",  label: "Jobpræferencer" },
+          { key: "ai",   label: "AI-præferencer" },
+          { key: "keys", label: "API-nøgler" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
@@ -258,8 +448,8 @@ export default function SettingsPage() {
             <CardHeader><CardTitle>AI-udbyder</CardTitle></CardHeader>
             <div className="mt-4 space-y-3">
               <p className="text-sm text-slate-600">
-                Administrér dine API-nøgler under{" "}
-                <a href="/cv" className="text-blue-600 underline">Indstillinger → API-nøgler</a>.
+                Tilføj dine API-nøgler under{" "}
+                <button onClick={() => setTab("keys")} className="text-blue-600 underline">API-nøgler</button>.
               </p>
               <F label="Foretrukken AI-model til generering" hint="Kræver tilsvarende API-nøgle">
                 <select className={I + " bg-white"}
@@ -284,9 +474,14 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="flex justify-end border-t border-slate-100 pt-4">
-        <Button loading={saving} onClick={save}>Gem præferencer</Button>
-      </div>
+      {/* ── API Keys ── */}
+      {tab === "keys" && <ApiKeysTab />}
+
+      {tab !== "keys" && (
+        <div className="flex justify-end border-t border-slate-100 pt-4">
+          <Button loading={saving} onClick={save}>Gem præferencer</Button>
+        </div>
+      )}
     </div>
   );
 }
