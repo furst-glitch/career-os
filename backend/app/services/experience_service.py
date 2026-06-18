@@ -138,6 +138,26 @@ class ExperienceService:
     def delete_certification(self, cert_id: str) -> None:
         self.db.table("cv_certifications").delete().eq("id", cert_id).execute()
 
+    # ─── Skills ───────────────────────────────────────────────────────────────
+
+    def list_skills(self, user_id: str) -> list[dict]:
+        mcv = self._master_cv_id(user_id)
+        if not mcv:
+            return []
+        return self.db.table("cv_skills").select("*").eq("master_cv_id", mcv).order("sort_order").execute().data
+
+    def create_skill(self, user_id: str, data: dict) -> dict:
+        mcv = self._master_cv_id(user_id)
+        result = self.db.table("cv_skills").insert({**data, "master_cv_id": mcv}).execute()
+        return result.data[0]
+
+    def update_skill(self, skill_id: str, data: dict) -> dict:
+        result = self.db.table("cv_skills").update(data).eq("id", skill_id).execute()
+        return result.data[0]
+
+    def delete_skill(self, skill_id: str) -> None:
+        self.db.table("cv_skills").delete().eq("id", skill_id).execute()
+
     # ─── Gaps ─────────────────────────────────────────────────────────────────
 
     def list_open_gaps(self, user_id: str) -> list[dict]:

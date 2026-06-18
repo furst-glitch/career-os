@@ -9,6 +9,8 @@ GET/POST  /profile/achievements
 PUT/DEL   /profile/achievements/{id}
 GET/POST  /profile/systems
 PUT/DEL   /profile/systems/{id}
+GET/POST  /profile/skills
+PUT/DEL   /profile/skills/{id}
 GET/POST  /profile/leadership
 PUT/DEL   /profile/leadership/{id}
 GET/POST  /profile/certifications
@@ -116,6 +118,28 @@ async def update_system(system_id: str, body: dict, user=Depends(get_current_use
 @router.delete("/systems/{system_id}", status_code=204)
 async def delete_system(system_id: str, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
     _svc(supabase).delete_system(system_id)
+
+
+# ── Skills ───────────────────────────────────────────────────────────────────
+
+@router.get("/skills")
+async def list_skills(user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).list_skills(user["id"])
+
+
+@router.post("/skills", status_code=201)
+async def create_skill(body: dict, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).create_skill(user["id"], body)
+
+
+@router.put("/skills/{skill_id}")
+async def update_skill(skill_id: str, body: dict, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    return _svc(supabase).update_skill(skill_id, body)
+
+
+@router.delete("/skills/{skill_id}", status_code=204)
+async def delete_skill(skill_id: str, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
+    _svc(supabase).delete_skill(skill_id)
 
 
 # ── Leadership ────────────────────────────────────────────────────────────────
