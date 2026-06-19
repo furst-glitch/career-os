@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete, apiStream } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -88,19 +88,25 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
     setLoading(true);
     setError(null);
     try {
-      const res = await apiPost<{ content: string; document_id: string; pipeline_status: string }>(
+      await apiStream(
         `/jobs/${job.id}/quickgen`,
-        { doc_type: docType, language: lang, writing_style: style }
+        { doc_type: docType, language: lang, writing_style: style },
+        () => {}, // ingen token-streaming — content kommer i done-event
+        (payload) => {
+          if (payload?.content) setContent(payload.content as string);
+          if (payload?.document_id) setDocId(payload.document_id as string);
+        },
+        (errMsg) => {
+          if (errMsg?.includes("no_api_key")) {
+            setError("Ingen API-nøgle konfigureret — gå til Indstillinger → AI-udbydere.");
+          } else {
+            setError(errMsg || "Generering fejlede");
+          }
+        },
       );
-      setContent(res.content);
-      setDocId(res.document_id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Generering fejlede";
-      if (msg.includes("402") || msg.includes("no_api_key")) {
-        setError("Ingen API-nøgle konfigureret — gå til Indstillinger → AI-udbydere.");
-      } else {
-        setError(msg);
-      }
+      setError(msg);
     } finally {
       setLoading(false);
     }

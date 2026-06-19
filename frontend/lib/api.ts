@@ -160,7 +160,7 @@ export async function apiStream(
   path: string,
   body: unknown,
   onChunk: (content: string) => void,
-  onDone?: () => void,
+  onDone?: (payload?: Record<string, unknown>) => void,
   onError?: (error: string) => void
 ): Promise<void> {
   const headers = await getAuthHeader();
@@ -188,6 +188,8 @@ export async function apiStream(
     buffer = events.pop() ?? "";
 
     for (const event of events) {
+      // Skip SSE comment lines (": ping" keep-alive)
+      if (event.trimStart().startsWith(":")) continue;
       const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
       if (!dataLine) continue;
       try {
@@ -195,9 +197,9 @@ export async function apiStream(
         if (payload.type === "chunk" && payload.content) {
           onChunk(payload.content);
         } else if (payload.type === "done") {
-          onDone?.();
+          onDone?.(payload);
         } else if (payload.type === "error") {
-          onError?.(payload.content);
+          onError?.(payload.content ?? payload.message ?? "Ukendt fejl");
         }
       } catch {
         // Skip malformed events

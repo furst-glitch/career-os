@@ -193,12 +193,19 @@ async def quickgen(
 ):
     """
     Generer et dokument (CV eller ansøgning) direkte fra et job-kort.
-    Opretter automatisk en pipeline-entry hvis den ikke eksisterer.
-    Returnerer: { document_id, content, pipeline_id, pipeline_status }
+    Returnerer SSE-stream med keep-alive pings og et enkelt 'done'-event til sidst.
+
+    SSE events:
+      : ping                                    (keep-alive mens AI tænker)
+      data: {"type": "done",   "document_id": ..., "content": ..., ...}
+      data: {"type": "error",  "message": ..., "code"?: "no_api_key"}
     """
+    import asyncio
+    import json as _json
     from app.services.application_service import ApplicationService
     from app.agents.application_agent import ApplicationAgent
     from app.providers.litellm_provider import NoProviderKeyError
+    from fastapi.responses import StreamingResponse
 
     if body.doc_type not in ("cover_letter", "cv"):
         raise HTTPException(400, "doc_type skal være 'cover_letter' eller 'cv'")
@@ -209,78 +216,77 @@ async def quickgen(
         raise HTTPException(404, "Job ikke fundet")
 
     app_svc = ApplicationService(supabase)
-
-    # Find eller opret pipeline-entry
     pipeline_id = job.get("pipeline_id")
     if not pipeline_id:
-        new_entry = app_svc.create_pipeline(user["id"], job_id, {
-            "status": "gemt",
-            "priority": "medium",
-        })
+        new_entry = app_svc.create_pipeline(user["id"], job_id, {"status": "gemt", "priority": "medium"})
         pipeline_id = new_entry["id"]
 
-    # Hent karriere-snapshot
     snapshot = _snapshot(user["id"], supabase)
     candidate_summary = snapshot.get("text_summary", "")
 
-    agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
-
-    try:
-        if body.doc_type == "cv":
-            result = await agent.run({
-                "job_title": job.get("title", ""),
-                "job_company": job.get("company", ""),
-                "job_description": job.get("description", ""),
-                "job_requirements": job.get("requirements", []),
-                "candidate_summary": candidate_summary,
-                "language": body.language,
-                "writing_style": body.writing_style,
-                "focus_areas": body.focus_areas,
-                "doc_type": "cv",
-            })
-            new_status = "cv_genereret"
-            title = f"CV — {job.get('title')} hos {job.get('company')}"
-        else:
-            result = await agent.run({
-                "job_title": job.get("title", ""),
-                "job_company": job.get("company", ""),
-                "job_description": job.get("description", ""),
-                "job_requirements": job.get("requirements", []),
-                "candidate_summary": candidate_summary,
-                "language": body.language,
-                "writing_style": body.writing_style,
-                "focus_areas": body.focus_areas,
-                "doc_type": "cover_letter",
-            })
-            new_status = "ansoegning_genereret"
-            title = f"Ansøgning — {job.get('title')} hos {job.get('company')}"
-    except NoProviderKeyError as exc:
-        raise HTTPException(
-            402,
-            detail={
-                "error": "no_api_key",
-                "message": str(exc),
-                "action": "Tilføj din API-nøgle under Indstillinger → AI-udbydere",
-            },
-        )
-    except Exception as exc:
-        raise HTTPException(500, f"AI-generering fejlede: {exc}")
-
-    doc = app_svc.save_cover_letter(
-        user_id=user["id"],
-        pipeline_id=pipeline_id,
-        title=title,
-        content=result.content,
-        language=body.language,
+    is_cv = body.doc_type == "cv"
+    new_status = "cv_genereret" if is_cv else "ansoegning_genereret"
+    title = (
+        f"CV — {job.get('title')} hos {job.get('company')}"
+        if is_cv
+        else f"Ansøgning — {job.get('title')} hos {job.get('company')}"
     )
 
-    # Opdater pipeline-status
-    app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
+    async def process():
+        queue: asyncio.Queue = asyncio.Queue()
 
-    return {
-        "document_id": doc["id"],
-        "title": title,
-        "content": result.content,
-        "pipeline_id": pipeline_id,
-        "pipeline_status": new_status,
-    }
+        async def run_agent():
+            try:
+                agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
+                r = await agent.run({
+                    "job_title": job.get("title", ""),
+                    "job_company": job.get("company", ""),
+                    "job_description": job.get("description", ""),
+                    "job_requirements": job.get("requirements", []),
+                    "candidate_summary": candidate_summary,
+                    "language": body.language,
+                    "writing_style": body.writing_style,
+                    "focus_areas": body.focus_areas,
+                    "doc_type": body.doc_type,
+                })
+                await queue.put(("ok", r))
+            except NoProviderKeyError as exc:
+                await queue.put(("no_key", str(exc)))
+            except Exception as exc:
+                await queue.put(("err", str(exc)))
+
+        task = asyncio.create_task(run_agent())
+        result = None
+        while True:
+            try:
+                kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                if kind == "ok":
+                    result = payload
+                elif kind == "no_key":
+                    yield f"data: {_json.dumps({'type': 'error', 'code': 'no_api_key', 'message': payload})}\n\n"
+                    task.cancel()
+                    return
+                else:
+                    yield f"data: {_json.dumps({'type': 'error', 'message': f'AI fejlede: {payload}'})}\n\n"
+                    task.cancel()
+                    return
+                break
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"
+
+        doc = app_svc.save_cover_letter(
+            user_id=user["id"],
+            pipeline_id=pipeline_id,
+            title=title,
+            content=result.content,
+            language=body.language,
+        )
+        app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
+
+        yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': title, 'content': result.content, 'pipeline_id': pipeline_id, 'pipeline_status': new_status})}\n\n"
+
+    return StreamingResponse(
+        process(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )

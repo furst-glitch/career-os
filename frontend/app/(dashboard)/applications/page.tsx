@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete, apiStream } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -156,19 +156,25 @@ function CoverLetterModal({
     setLoading(true);
     setError(null);
     try {
-      const res = await apiPost<{ content: string; document_id: string }>(
+      await apiStream(
         `/applications/${app.id}/generate`,
-        { language: lang, writing_style: style, focus_areas: focus || undefined }
+        { language: lang, writing_style: style, focus_areas: focus || undefined },
+        () => {}, // ingen token-streaming — content kommer i done-event
+        (payload) => {
+          if (payload?.content) setContent(payload.content as string);
+          if (payload?.document_id) setDocId(payload.document_id as string);
+        },
+        (errMsg) => {
+          if (errMsg?.includes("no_api_key")) {
+            setError("Ingen API-nøgle konfigureret — gå til Indstillinger → API-nøgler.");
+          } else {
+            setError(errMsg || "Generering fejlede");
+          }
+        },
       );
-      setContent(res.content);
-      setDocId(res.document_id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Generering fejlede";
-      if (msg.includes("402") || msg.includes("no_api_key")) {
-        setError("Ingen API-nøgle konfigureret — gå til Indstillinger → API-nøgler.");
-      } else {
-        setError(msg);
-      }
+      setError(msg);
     } finally {
       setLoading(false);
     }

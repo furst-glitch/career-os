@@ -189,17 +189,51 @@ async def generate_master_cv(
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
-    """Genererer et Master CV fra kandidatprofilen. SSE streaming."""
+    """Genererer et Master CV fra kandidatprofilen. SSE token-streaming med keep-alive pings."""
+    import asyncio
+    import json as _json
     discovery_service = DiscoveryService(supabase)
 
     async def event_stream():
-        async for chunk in discovery_service.generate_master_cv(user["id"]):
-            yield f"data: {chunk}\n\n"
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def producer():
+            try:
+                async for chunk in discovery_service.generate_master_cv(user["id"]):
+                    await queue.put(("data", chunk))
+            except Exception as exc:
+                try:
+                    await queue.put(("data", _json.dumps({"type": "error", "content": str(exc)})))
+                except Exception:
+                    pass
+            finally:
+                try:
+                    queue.put_nowait(("done", ""))
+                except asyncio.QueueFull:
+                    pass
+
+        task = asyncio.create_task(producer())
+        try:
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if kind == "done":
+                    break
+                yield f"data: {payload}\n\n"
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"X-Accel-Buffering": "no"},
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
 
 
