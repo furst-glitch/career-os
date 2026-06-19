@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPut, apiDelete, apiStream } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -84,6 +85,8 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
   const [progressMsg, setProgressMsg] = useState("");
   const [content, setContent] = useState("");
   const [docId, setDocId] = useState<string | null>(null);
+  const [pipelineId, setPipelineId] = useState<string | null>(null);
+  const [markedAnsoegt, setMarkedAnsoegt] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function generate() {
@@ -99,6 +102,7 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
         (payload) => {
           if (payload?.content) setContent(payload.content as string);
           if (payload?.document_id) setDocId(payload.document_id as string);
+          if (payload?.pipeline_id) setPipelineId(payload.pipeline_id as string);
         },
         (errMsg) => {
           if (errMsg?.includes("no_api_key")) {
@@ -251,11 +255,28 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
           <div className="flex gap-2">
             {content && (
               <button
-                onClick={() => { setContent(""); setDocId(null); }}
+                onClick={() => { setContent(""); setDocId(null); setMarkedAnsoegt(false); }}
                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
               >
                 Ny version
               </button>
+            )}
+            {content && pipelineId && !markedAnsoegt && (
+              <button
+                onClick={async () => {
+                  await apiPut(`/applications/${pipelineId}`, { current_status: "ansoegt" });
+                  setMarkedAnsoegt(true);
+                  onClose(true);
+                }}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700"
+              >
+                Ansøgt
+              </button>
+            )}
+            {markedAnsoegt && (
+              <span className="rounded-lg bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 border border-violet-200">
+                Markeret som ansøgt
+              </span>
             )}
             <button
               onClick={loading ? undefined : generate}
@@ -398,12 +419,13 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen }: {
+function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMarkAnsoegt }: {
   job: Job;
   onToggleSave: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshMatch: (id: string) => void;
   onQuickGen: (job: Job) => void;
+  onMarkAnsoegt: (job: Job) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -474,6 +496,14 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen }: {
         >
           Genér ansøgning
         </button>
+        {job.pipeline_id && ["cv_genereret", "ansoegning_genereret"].includes(job.pipeline_status ?? "") && (
+          <button
+            onClick={() => onMarkAnsoegt(job)}
+            className="flex-1 rounded-lg border border-violet-200 bg-violet-50 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors"
+          >
+            Ansøgt
+          </button>
+        )}
       </div>
 
       <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
@@ -481,6 +511,12 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen }: {
           <a href={job.url} target="_blank" rel="noopener noreferrer"
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
             Vis opslag
+          </a>
+        )}
+        {job.pipeline_id && ["samtale_1", "samtale_2", "case_stadie", "interviewing"].includes(job.pipeline_status ?? "") && (
+          <a href={`/interview-center/${job.pipeline_id}`}
+            className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100">
+            Forberedelsespakke
           </a>
         )}
         <button
@@ -592,6 +628,7 @@ const ACTIVE_STATUSES = new Set([
 const DONE_STATUSES = new Set(["rejected", "withdrawn", "hired", "afslag", "ansat"]);
 
 export default function JobsPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -637,6 +674,13 @@ export default function JobsPage() {
     const match = await apiGet<{ total: number }>(`/jobs/${id}/match`);
     setJobs(prev => prev.map(j => j.id === id ? { ...j, match_score: match.total } : j));
     showToast("Match score opdateret");
+  }
+
+  async function handleMarkAnsoegt(job: Job) {
+    if (!job.pipeline_id) return;
+    await apiPut(`/applications/${job.pipeline_id}`, { current_status: "ansoegt" });
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, pipeline_status: "ansoegt" } : j));
+    showToast("Markeret som ansøgt — dokumenter er gemt under jobbet");
   }
 
   const filtered = jobs.filter(j => {
@@ -747,6 +791,7 @@ export default function JobsPage() {
               onDelete={handleDelete}
               onRefreshMatch={handleRefreshMatch}
               onQuickGen={j => setQuickGenJob(j)}
+              onMarkAnsoegt={handleMarkAnsoegt}
             />
           ))}
         </div>

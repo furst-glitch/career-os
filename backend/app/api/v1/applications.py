@@ -379,14 +379,18 @@ async def trigger_interview_prep(
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
-    """Manuel trigger af interviewforberedelse (kræver status samtale_1 eller samtale_2)."""
+    """
+    Manuel trigger af interviewforberedelse.
+    Hvis status ikke er samtale_1/samtale_2, sættes den automatisk til samtale_1.
+    """
     svc = ApplicationService(supabase)
     app = svc.get_pipeline(user["id"], pipeline_id)
     if not app:
         raise HTTPException(404, "Ansøgning ikke fundet")
     status = app.get("current_status", "")
     if status not in INTERVIEW_STATUSES:
-        raise HTTPException(400, f"Interviewforberedelse kræver status samtale_1 eller samtale_2 (nuværende: {status})")
+        svc.update_pipeline(user["id"], pipeline_id, {"current_status": "samtale_1"})
+        status = "samtale_1"
 
     from app.services.interview_prep_service import generate_interview_prep
     content = await generate_interview_prep(user["id"], pipeline_id, status, supabase)

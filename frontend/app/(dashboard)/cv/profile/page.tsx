@@ -121,6 +121,85 @@ function Empty({ label }: { label: string }) {
   );
 }
 
+// ── Contact Card ──────────────────────────────────────────────────────────────
+
+interface ContactInfo {
+  full_name: string;
+  email: string;
+  phone: string;
+  location: string;
+  linkedin_url: string;
+}
+
+function ContactCard() {
+  const [info, setInfo] = useState<ContactInfo>({ full_name: "", email: "", phone: "", location: "", linkedin_url: "" });
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    apiGet<Partial<ContactInfo>>("/profile/me").then((d) =>
+      setInfo({ full_name: d.full_name ?? "", email: d.email ?? "", phone: d.phone ?? "", location: d.location ?? "", linkedin_url: d.linkedin_url ?? "" })
+    );
+  }, []);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await apiPut("/profile/me", info);
+      setSaved(true);
+      setEditing(false);
+      setTimeout(() => setSaved(false), 3000);
+    } finally { setSaving(false); }
+  }
+
+  const hasContact = info.full_name || info.email || info.phone || info.location;
+
+  if (!editing) {
+    return (
+      <Card padding="sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kontaktoplysninger</p>
+              {saved && <span className="text-xs text-green-600 font-medium">Gemt</span>}
+            </div>
+            {hasContact ? (
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-700">
+                {info.full_name && <span className="font-medium">{info.full_name}</span>}
+                {info.email && <span>{info.email}</span>}
+                {info.phone && <span>{info.phone}</span>}
+                {info.location && <span>{info.location}</span>}
+                {info.linkedin_url && <span className="text-blue-600 truncate max-w-xs">{info.linkedin_url}</span>}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">Ingen kontaktoplysninger — klik Rediger for at tilføje navn, email og telefon til dine ansøgninger.</p>
+            )}
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Rediger</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card padding="sm">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Kontaktoplysninger</p>
+      <div className="grid grid-cols-2 gap-3">
+        <F label="Fulde navn"><input className={I} value={info.full_name} onChange={e => setInfo(p => ({ ...p, full_name: e.target.value }))} placeholder="Fornavn Efternavn" /></F>
+        <F label="Email"><input type="email" className={I} value={info.email} onChange={e => setInfo(p => ({ ...p, email: e.target.value }))} placeholder="din@email.dk" /></F>
+        <F label="Telefon"><input type="tel" className={I} value={info.phone} onChange={e => setInfo(p => ({ ...p, phone: e.target.value }))} placeholder="+45 12 34 56 78" /></F>
+        <F label="By / Lokation"><input className={I} value={info.location} onChange={e => setInfo(p => ({ ...p, location: e.target.value }))} placeholder="København, Danmark" /></F>
+        <F label="LinkedIn URL" ><input type="url" className={I} value={info.linkedin_url} onChange={e => setInfo(p => ({ ...p, linkedin_url: e.target.value }))} placeholder="https://linkedin.com/in/dit-navn" /></F>
+      </div>
+      <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+        <Button size="sm" loading={saving} onClick={save}>Gem kontaktoplysninger</Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>Annuller</Button>
+      </div>
+    </Card>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 type SectionKey = "experiences" | "educations" | "achievements" | "projects" | "systems" | "skills" | "leadership" | "certifications";
@@ -210,6 +289,9 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
+      {/* Contact info */}
+      <ContactCard />
+
       {/* Header + score */}
       <div className="flex items-start justify-between">
         <div>

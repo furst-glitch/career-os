@@ -106,11 +106,16 @@ class MemorySnapshotService:
             ).eq("id", mcv_id).limit(1).execute()
             mcv = row.data[0] if row.data else {}
         upr = self.db.table("user_profiles").select(
-            "display_name, language, default_ai_provider"
+            "full_name, display_name, email, phone, location, linkedin_url, language, default_ai_provider"
         ).eq("user_id", user_id).limit(1).execute()
         up = upr.data[0] if upr.data else {}
         return {
+            "full_name":         up.get("full_name") or up.get("display_name"),
             "display_name":      up.get("display_name"),
+            "email":             up.get("email"),
+            "phone":             up.get("phone"),
+            "location":          up.get("location"),
+            "linkedin_url":      up.get("linkedin_url"),
             "target_title":      mcv.get("target_title"),
             "summary":           mcv.get("summary"),
             "language":          mcv.get("language") or up.get("language") or "da",
@@ -181,6 +186,14 @@ class MemorySnapshotService:
     ) -> str:
         lines: list[str] = []
 
+        if profile.get("full_name"):
+            lines.append(f"NAVN: {profile['full_name']}")
+        if profile.get("email"):
+            lines.append(f"EMAIL: {profile['email']}")
+        if profile.get("phone"):
+            lines.append(f"TELEFON: {profile['phone']}")
+        if profile.get("location"):
+            lines.append(f"LOKATION: {profile['location']}")
         if profile.get("target_title"):
             lines.append(f"KANDIDAT: {profile['target_title']}")
         if profile.get("summary"):

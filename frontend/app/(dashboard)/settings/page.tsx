@@ -323,7 +323,7 @@ function ApiKeysTab() {
   );
 }
 
-// ── Dokumenter Tab ────────────────────────────────────────────────────────────
+// ── Layout Tab ────────────────────────────────────────────────────────────────
 
 function DokumenterTab() {
   const [cvTpl, setCvTpl]     = useState<CvTemplate>("ats_professional");
@@ -472,7 +472,7 @@ export default function SettingsPage() {
           { key: "job",  label: "Jobpræferencer" },
           { key: "ai",   label: "AI-præferencer" },
           { key: "keys", label: "API-nøgler" },
-          { key: "docs", label: "Dokumenter" },
+          { key: "docs", label: "Layout" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
@@ -624,7 +624,7 @@ export default function SettingsPage() {
       {/* ── API Keys ── */}
       {tab === "keys" && <ApiKeysTab />}
 
-      {/* ── Dokumenter ── */}
+      {/* ── Layout ── */}
       {tab === "docs" && <DokumenterTab />}
 
       {tab !== "keys" && tab !== "docs" && (
