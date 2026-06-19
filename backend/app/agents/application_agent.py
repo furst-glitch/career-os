@@ -129,7 +129,8 @@ class ApplicationAgent(BaseAgent):
                 "Struktur: Stærk åbning → Konkrete eksempler med tal → Direkte match til jobkrav → Afslutning med call-to-action\n"
                 "Undgå klichéer ('jeg er teamplayer', 'passioneret for'). Maks 400 ord.\n\n"
                 "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
-                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst."
+                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst.\n"
+                "Afslut med 'Med venlig hilsen' efterfulgt af kandidatens navn hvis det er angivet — ingen telefon/email/adresse."
             )
             user_msg = (
                 f"Stil: {job_title} hos {job_company}\n\n"
