@@ -68,7 +68,9 @@ class ApplicationAgent(BaseAgent):
                 "• IMPONERER HIRING MANAGER: Konkrete resultater med tal og procenter, direkte match til kravene, fremhæv det mest relevante øverst\n\n"
                 f"Generér et målrettet CV på dansk til stillingen {job_title} hos {job_company}.\n"
                 "Fremhæv de kompetencer og erfaringer der matcher jobkravene.\n"
-                "Brug bullet-points, kvantificér resultater. Maks 600 ord."
+                "Brug bullet-points, kvantificér resultater. Maks 600 ord.\n\n"
+                "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
+                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst."
             )
             user_msg = (
                 f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
@@ -125,7 +127,9 @@ class ApplicationAgent(BaseAgent):
                 "• ENGAGERER HR: Åbn stærkt, vis kulturelt fit, kommunikér klart og personligt\n"
                 "• IMPONERER HIRING MANAGER: Fremhæv konkrete resultater med tal, vis direkte match til kravene\n\n"
                 "Struktur: Stærk åbning → Konkrete eksempler med tal → Direkte match til jobkrav → Afslutning med call-to-action\n"
-                "Undgå klichéer ('jeg er teamplayer', 'passioneret for'). Maks 400 ord."
+                "Undgå klichéer ('jeg er teamplayer', 'passioneret for'). Maks 400 ord.\n\n"
+                "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
+                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst."
             )
             user_msg = (
                 f"Stil: {job_title} hos {job_company}\n\n"
