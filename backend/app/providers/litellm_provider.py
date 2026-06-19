@@ -92,21 +92,52 @@ class LiteLLMProvider:
             return settings.anthropic_default_model
         return settings.openai_default_model
 
+    def _system_key_for(self, provider: str) -> str | None:
+        return {"openai": settings.openai_api_key, "anthropic": settings.anthropic_api_key}.get(provider)
+
+    async def _has_key(self, provider: str) -> bool:
+        """Returnerer True hvis der er en brugernøgle ELLER systemets nøgle til denne provider."""
+        if provider == "ollama":
+            return bool(await KeyManager.get_key(self.user_id, "ollama") or settings.ollama_base_url)
+        return bool(await KeyManager.get_key(self.user_id, provider) or self._system_key_for(provider))
+
+    async def _find_available_provider(self, preferred: str) -> str:
+        """
+        Returnerer preferred hvis den har en nøgle.
+        Ellers prøves openai → anthropic i den rækkefølge.
+        Sikrer at systemet altid bruger den udbyder brugeren faktisk har en nøgle til.
+        """
+        if await self._has_key(preferred):
+            return preferred
+        for fallback in ["openai", "anthropic"]:
+            if fallback != preferred and await self._has_key(fallback):
+                import logging
+                logging.getLogger("app.providers").info(
+                    "Ingen nøgle for '%s', falder tilbage til '%s'.", preferred, fallback
+                )
+                return fallback
+        return preferred  # ingen nøgler — _resolve_api_key vil give NoProviderKeyError
+
     async def _resolve_model(self, agent_name: str, provider: str | None = None) -> tuple[str, str]:
         config = await self._get_agent_config(agent_name)
         overrides = config.get("agent_configurations") or [{}]
         override = overrides[0] if overrides else {}
 
-        resolved_provider = (
+        preferred_provider = (
             provider
             or override.get("provider_override")
             or await self._get_user_default_provider()
             or config.get("default_provider", "openai")
         )
-        # Model priority: user override → agent_registry DB → settings default
+
+        # Brug den foretrukne udbyder KUN hvis der er en nøgle til den.
+        # Ellers skift automatisk til en udbyder brugeren faktisk har konfigureret.
+        resolved_provider = await self._find_available_provider(preferred_provider)
+
+        # Model: bruger-override → agent_registry (kun hvis vi blev ved den foretrukne provider) → settings-default
         resolved_model = (
             override.get("model_override")
-            or config.get("default_model")
+            or (config.get("default_model") if resolved_provider == preferred_provider else None)
             or self._default_model_for_provider(resolved_provider)
         )
 
@@ -133,11 +164,7 @@ class LiteLLMProvider:
             self._used_user_key = True
             return user_key, None
 
-        system_key_map = {
-            "openai": settings.openai_api_key,
-            "anthropic": settings.anthropic_api_key,
-        }
-        system_key = system_key_map.get(provider)
+        system_key = self._system_key_for(provider)
         if system_key:
             self._used_user_key = False
             return system_key, None
@@ -229,6 +256,13 @@ class LiteLLMProvider:
     async def embed(self, text: str) -> list[float]:
         import litellm
 
+        # Embeddings kræver OpenAI — brug brugerens nøgle eller systemnøgle
+        provider = await self._find_available_provider("openai")
+        if provider != "openai":
+            raise NoProviderKeyError(
+                "Embeddings kræver en OpenAI API-nøgle. "
+                "Tilføj din nøgle under Indstillinger → AI-udbydere."
+            )
         api_key, _ = await self._resolve_api_key("openai")
 
         response = await litellm.aembedding(
