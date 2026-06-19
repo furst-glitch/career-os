@@ -106,19 +106,27 @@ class MemorySnapshotService:
             ).eq("id", mcv_id).limit(1).execute()
             mcv = row.data[0] if row.data else {}
         upr = self.db.table("user_profiles").select(
-            "full_name, display_name, email, phone, location, linkedin_url, language, default_ai_provider"
+            "full_name, display_name, email, phone, location, linkedin_url, language, "
+            "default_ai_provider, address, city, postal_code, website, "
+            "salary_expectation, notice_period"
         ).eq("user_id", user_id).limit(1).execute()
         up = upr.data[0] if upr.data else {}
         return {
-            "full_name":         up.get("full_name") or up.get("display_name"),
-            "display_name":      up.get("display_name"),
-            "email":             up.get("email"),
-            "phone":             up.get("phone"),
-            "location":          up.get("location"),
-            "linkedin_url":      up.get("linkedin_url"),
-            "target_title":      mcv.get("target_title"),
-            "summary":           mcv.get("summary"),
-            "language":          mcv.get("language") or up.get("language") or "da",
+            "full_name":           up.get("full_name") or up.get("display_name"),
+            "display_name":        up.get("display_name"),
+            "email":               up.get("email"),
+            "phone":               up.get("phone"),
+            "location":            up.get("location"),
+            "linkedin_url":        up.get("linkedin_url"),
+            "address":             up.get("address"),
+            "city":                up.get("city"),
+            "postal_code":         up.get("postal_code"),
+            "website":             up.get("website"),
+            "salary_expectation":  up.get("salary_expectation"),
+            "notice_period":       up.get("notice_period"),
+            "target_title":        mcv.get("target_title"),
+            "summary":             mcv.get("summary"),
+            "language":            mcv.get("language") or up.get("language") or "da",
             "default_ai_provider": up.get("default_ai_provider"),
         }
 
@@ -194,6 +202,14 @@ class MemorySnapshotService:
             lines.append(f"TELEFON: {profile['phone']}")
         if profile.get("location"):
             lines.append(f"LOKATION: {profile['location']}")
+        if profile.get("linkedin_url"):
+            lines.append(f"LINKEDIN: {profile['linkedin_url']}")
+        if profile.get("website"):
+            lines.append(f"WEBSITE: {profile['website']}")
+        if profile.get("salary_expectation"):
+            lines.append(f"LØNFORVENTNING: {profile['salary_expectation']:,} DKK/år".replace(",", "."))
+        if profile.get("notice_period"):
+            lines.append(f"OPSIGELSESVARSEL: {profile['notice_period']}")
         if profile.get("target_title"):
             lines.append(f"KANDIDAT: {profile['target_title']}")
         if profile.get("summary"):

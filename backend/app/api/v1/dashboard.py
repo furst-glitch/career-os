@@ -21,9 +21,20 @@ async def get_dashboard_summary(
     """
     uid = user["id"]
 
+    def _q(fn):
+        try:
+            return fn()
+        except Exception:
+            return []
+
+    def _q1(fn, default=None):
+        try:
+            return fn()
+        except Exception:
+            return default
+
     # ── Parallel data fetch ───────────────────────────────────────────────────
-    # Top job matches
-    top_matches = (
+    top_matches = _q(lambda: (
         supabase.table("jobs")
         .select("id, title, company, location, match_score, is_saved, created_at, url")
         .eq("user_id", uid)
@@ -32,48 +43,44 @@ async def get_dashboard_summary(
         .limit(5)
         .execute()
         .data or []
-    )
+    ))
 
-    # Active applications (not rejected/withdrawn)
-    active_apps = (
+    active_apps = _q(lambda: (
         supabase.table("application_pipeline")
         .select("id, current_status, priority, deadline, created_at, jobs(title, company)")
         .eq("user_id", uid)
-        .not_.in_("current_status", ["rejected", "withdrawn"])
+        .not_.in_("current_status", ["rejected", "withdrawn", "afslag"])
         .order("created_at", desc=True)
         .limit(10)
         .execute()
         .data or []
-    )
+    ))
 
-    # Application counts by status
-    all_apps = (
+    all_apps = _q(lambda: (
         supabase.table("application_pipeline")
         .select("current_status")
         .eq("user_id", uid)
         .execute()
         .data or []
-    )
+    ))
     status_counts: dict[str, int] = {}
     for a in all_apps:
         s = a.get("current_status") or "draft"
         status_counts[s] = status_counts.get(s, 0) + 1
 
-    # Upcoming interviews (apps with interviewing status + deadline in future)
-    interviews = (
+    interviews = _q(lambda: (
         supabase.table("application_pipeline")
         .select("id, deadline, notes, jobs(title, company)")
         .eq("user_id", uid)
-        .in_("current_status", ["interviewing", "screening"])
+        .in_("current_status", ["interviewing", "screening", "samtale_1", "samtale_2"])
         .not_.is_("deadline", "null")
         .order("deadline")
         .limit(5)
         .execute()
         .data or []
-    )
+    ))
 
-    # Recent notifications
-    notifications = (
+    notifications = _q(lambda: (
         supabase.table("notifications")
         .select("id, event_type, title, body, is_read, created_at")
         .eq("user_id", uid)
@@ -81,11 +88,10 @@ async def get_dashboard_summary(
         .limit(10)
         .execute()
         .data or []
-    )
+    ))
     unread_count = sum(1 for n in notifications if not n.get("is_read"))
 
-    # CV completeness
-    score_row = (
+    score_row = _q1(lambda: (
         supabase.table("profile_scores")
         .select("overall")
         .eq("user_id", uid)
@@ -93,22 +99,20 @@ async def get_dashboard_summary(
         .limit(1)
         .execute()
         .data
-    )
+    ))
     cv_score = score_row[0]["overall"] if score_row else 0
 
-    # Has master CV?
-    mcv = (
+    mcv = _q1(lambda: (
         supabase.table("master_cvs")
         .select("is_generated")
         .eq("user_id", uid)
         .limit(1)
         .execute()
         .data
-    )
+    ))
     has_mcv = bool(mcv and mcv[0].get("is_generated"))
 
-    # Recent jobs (last 5 discovered)
-    recent_jobs = (
+    recent_jobs = _q(lambda: (
         supabase.table("jobs")
         .select("id, title, company, match_score, created_at, source")
         .eq("user_id", uid)
@@ -116,18 +120,21 @@ async def get_dashboard_summary(
         .limit(5)
         .execute()
         .data or []
-    )
+    ))
 
-    # Last career coach session
-    coach_sessions = (
-        supabase.table("career_coach_sessions")
-        .select("id, title, created_at")
-        .eq("user_id", uid)
-        .order("created_at", desc=True)
-        .limit(3)
-        .execute()
-        .data or []
-    )
+    # Career coach sessions (tabel oprettes når funktionen er klar)
+    try:
+        coach_sessions = (
+            supabase.table("career_coach_sessions")
+            .select("id, title, created_at")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(3)
+            .execute()
+            .data or []
+        )
+    except Exception:
+        coach_sessions = []
 
     return {
         "top_job_matches": top_matches,

@@ -95,7 +95,7 @@ async def generate_interview_prep(
 
         job_title = job.get("title", "Ukendt stilling")
         company = job.get("company", "Ukendt virksomhed")
-        description = (job.get("description") or "")[:4000]
+        description = (job.get("full_description") or job.get("description") or "")[:4000]
         requirements = job.get("requirements") or []
         req_text = "\n".join(f"- {r}" for r in requirements[:20]) if requirements else "Ikke angivet"
 

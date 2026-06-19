@@ -165,8 +165,10 @@ class JobDiscoveryService:
             return []
 
     def save_result(self, user_id: str, result: dict) -> dict:
-        """Gem et opdaget job-resultat i brugerens jobs-tabel (inkl. fuld jobtekst)."""
+        """Gem et opdaget job-resultat i brugerens jobs-tabel (inkl. fuld jobtekst og matchscore)."""
         job_svc = JobService(self.db)
+        # Gem match_score til genbrug efter create_job
+        match_score = result.get("match_score")
         payload = {
             **result,
             "is_saved": True,
@@ -179,4 +181,12 @@ class JobDiscoveryService:
             "external_id", "deadline", "ai_summary",
         ):
             payload.pop(key, None)
-        return job_svc.create_job(user_id, payload)
+        job = job_svc.create_job(user_id, payload)
+        # Gem matchscore fra discovery (undgår re-beregning)
+        if match_score is not None:
+            try:
+                job_svc.store_match_score(job["id"], int(match_score))
+                job["match_score"] = int(match_score)
+            except Exception:
+                pass
+        return job

@@ -29,13 +29,14 @@ const fromMonth = (m: string) => (m ? m + "-01" : null);
 
 // ── Reusable primitives ───────────────────────────────────────────────────────
 
-function F({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function F({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-slate-600">
         {label}{required && <span className="ml-0.5 text-red-500">*</span>}
       </label>
       {children}
+      {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
     </div>
   );
 }
@@ -129,51 +130,85 @@ interface ContactInfo {
   phone: string;
   location: string;
   linkedin_url: string;
+  address: string;
+  city: string;
+  postal_code: string;
+  website: string;
+  salary_expectation: string;
+  notice_period: string;
 }
 
+const EMPTY_CONTACT: ContactInfo = {
+  full_name: "", email: "", phone: "", location: "",
+  linkedin_url: "", address: "", city: "", postal_code: "",
+  website: "", salary_expectation: "", notice_period: "",
+};
+
 function ContactCard() {
-  const [info, setInfo] = useState<ContactInfo>({ full_name: "", email: "", phone: "", location: "", linkedin_url: "" });
+  const [info, setInfo] = useState<ContactInfo>(EMPTY_CONTACT);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     apiGet<Partial<ContactInfo>>("/profile/me").then((d) =>
-      setInfo({ full_name: d.full_name ?? "", email: d.email ?? "", phone: d.phone ?? "", location: d.location ?? "", linkedin_url: d.linkedin_url ?? "" })
+      setInfo({
+        full_name:          d.full_name ?? "",
+        email:              d.email ?? "",
+        phone:              d.phone ?? "",
+        location:           d.location ?? "",
+        linkedin_url:       d.linkedin_url ?? "",
+        address:            d.address ?? "",
+        city:               d.city ?? "",
+        postal_code:        d.postal_code ?? "",
+        website:            d.website ?? "",
+        salary_expectation: d.salary_expectation != null ? String(d.salary_expectation) : "",
+        notice_period:      d.notice_period ?? "",
+      })
     );
   }, []);
 
   async function save() {
     setSaving(true);
     try {
-      await apiPut("/profile/me", info);
+      const payload = {
+        ...info,
+        salary_expectation: info.salary_expectation ? parseInt(info.salary_expectation) : null,
+      };
+      await apiPut("/profile/me", payload);
       setSaved(true);
       setEditing(false);
       setTimeout(() => setSaved(false), 3000);
     } finally { setSaving(false); }
   }
 
-  const hasContact = info.full_name || info.email || info.phone || info.location;
+  const s = (k: keyof ContactInfo, v: string) => setInfo(p => ({ ...p, [k]: v }));
+  const hasContact = info.full_name || info.email || info.phone;
 
   if (!editing) {
     return (
       <Card padding="sm">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kontaktoplysninger</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Personprofil</p>
               {saved && <span className="text-xs text-green-600 font-medium">Gemt</span>}
             </div>
             {hasContact ? (
-              <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-700">
-                {info.full_name && <span className="font-medium">{info.full_name}</span>}
-                {info.email && <span>{info.email}</span>}
-                {info.phone && <span>{info.phone}</span>}
-                {info.location && <span>{info.location}</span>}
-                {info.linkedin_url && <span className="text-blue-600 truncate max-w-xs">{info.linkedin_url}</span>}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+                {info.full_name    && <Row label="Navn"             value={info.full_name} />}
+                {info.email        && <Row label="Email"            value={info.email} />}
+                {info.phone        && <Row label="Telefon"          value={info.phone} />}
+                {(info.city || info.location) && <Row label="By" value={info.city || info.location} />}
+                {info.address      && <Row label="Adresse"          value={info.address} />}
+                {info.postal_code  && <Row label="Postnummer"       value={info.postal_code} />}
+                {info.linkedin_url && <Row label="LinkedIn"         value={info.linkedin_url} link />}
+                {info.website      && <Row label="Website"          value={info.website} link />}
+                {info.salary_expectation && <Row label="Lønforventning" value={`${parseInt(info.salary_expectation).toLocaleString("da-DK")} DKK/år`} />}
+                {info.notice_period && <Row label="Opsigelsesvarsel" value={info.notice_period} />}
               </div>
             ) : (
-              <p className="text-sm text-slate-400">Ingen kontaktoplysninger — klik Rediger for at tilføje navn, email og telefon til dine ansøgninger.</p>
+              <p className="text-sm text-slate-400">Ingen personoplysninger — klik Rediger for at tilføje navn, email og kontaktdata til dine ansøgninger.</p>
             )}
           </div>
           <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Rediger</Button>
@@ -184,19 +219,57 @@ function ContactCard() {
 
   return (
     <Card padding="sm">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Kontaktoplysninger</p>
-      <div className="grid grid-cols-2 gap-3">
-        <F label="Fulde navn"><input className={I} value={info.full_name} onChange={e => setInfo(p => ({ ...p, full_name: e.target.value }))} placeholder="Fornavn Efternavn" /></F>
-        <F label="Email"><input type="email" className={I} value={info.email} onChange={e => setInfo(p => ({ ...p, email: e.target.value }))} placeholder="din@email.dk" /></F>
-        <F label="Telefon"><input type="tel" className={I} value={info.phone} onChange={e => setInfo(p => ({ ...p, phone: e.target.value }))} placeholder="+45 12 34 56 78" /></F>
-        <F label="By / Lokation"><input className={I} value={info.location} onChange={e => setInfo(p => ({ ...p, location: e.target.value }))} placeholder="København, Danmark" /></F>
-        <F label="LinkedIn URL" ><input type="url" className={I} value={info.linkedin_url} onChange={e => setInfo(p => ({ ...p, linkedin_url: e.target.value }))} placeholder="https://linkedin.com/in/dit-navn" /></F>
+      <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Personprofil</p>
+
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <F label="Fulde navn"><input className={I} value={info.full_name} onChange={e => s("full_name", e.target.value)} placeholder="Fornavn Efternavn" /></F>
+          <F label="Email"><input type="email" className={I} value={info.email} onChange={e => s("email", e.target.value)} placeholder="din@email.dk" /></F>
+          <F label="Telefon"><input type="tel" className={I} value={info.phone} onChange={e => s("phone", e.target.value)} placeholder="+45 12 34 56 78" /></F>
+          <F label="LinkedIn URL"><input type="url" className={I} value={info.linkedin_url} onChange={e => s("linkedin_url", e.target.value)} placeholder="https://linkedin.com/in/dit-navn" /></F>
+          <F label="Website"><input type="url" className={I} value={info.website} onChange={e => s("website", e.target.value)} placeholder="https://ditsite.dk" /></F>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Adresse</p>
+          <div className="grid grid-cols-3 gap-3">
+            <F label="Adresse (vej)"><input className={I} value={info.address} onChange={e => s("address", e.target.value)} placeholder="Nørrebrogade 1" /></F>
+            <F label="By"><input className={I} value={info.city} onChange={e => s("city", e.target.value)} placeholder="København N" /></F>
+            <F label="Postnummer"><input className={I} value={info.postal_code} onChange={e => s("postal_code", e.target.value)} placeholder="2200" /></F>
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wide">Ansættelse</p>
+          <div className="grid grid-cols-2 gap-3">
+            <F label="Lønforventning (DKK/år)" hint="Bruges i samtaleforberedelse og karrierecoach">
+              <input type="number" className={I} value={info.salary_expectation} onChange={e => s("salary_expectation", e.target.value)} placeholder="750000" min="0" step="10000" />
+            </F>
+            <F label="Opsigelsesvarsel" hint="f.eks. '3 måneder' eller '1 måned til udgangen'">
+              <input className={I} value={info.notice_period} onChange={e => s("notice_period", e.target.value)} placeholder="3 måneder" />
+            </F>
+          </div>
+        </div>
       </div>
-      <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-        <Button size="sm" loading={saving} onClick={save}>Gem kontaktoplysninger</Button>
+
+      <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
+        <Button size="sm" loading={saving} onClick={save}>Gem personprofil</Button>
         <Button size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>Annuller</Button>
       </div>
     </Card>
+  );
+}
+
+function Row({ label, value, link }: { label: string; value: string; link?: boolean }) {
+  return (
+    <>
+      <span className="text-xs text-slate-400">{label}</span>
+      {link ? (
+        <a href={value} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline truncate">{value}</a>
+      ) : (
+        <span className="text-sm text-slate-700">{value}</span>
+      )}
+    </>
   );
 }
 

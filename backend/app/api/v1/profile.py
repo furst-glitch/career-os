@@ -212,19 +212,32 @@ async def delete_certification(cert_id: str, user=Depends(get_current_user), sup
 
 @router.get("/me")
 async def get_my_profile(user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
-    """Henter brugerens kontaktprofil (navn, email, telefon, lokation, linkedin)."""
+    """Henter brugerens kontaktprofil."""
     row = supabase.table("user_profiles").select(
-        "full_name, email, phone, location, linkedin_url, display_name, language"
+        "full_name, email, phone, location, linkedin_url, display_name, language, "
+        "address, city, postal_code, website, salary_expectation, notice_period"
     ).eq("user_id", user["id"]).limit(1).execute()
     if row.data:
-        return row.data[0]
-    return {"full_name": None, "email": user.get("email"), "phone": None, "location": None, "linkedin_url": None}
+        data = row.data[0]
+        # Udfyld email fra auth hvis ikke sat
+        if not data.get("email"):
+            data["email"] = user.get("email")
+        return data
+    return {
+        "full_name": None, "email": user.get("email"), "phone": None,
+        "location": None, "linkedin_url": None, "display_name": None,
+        "language": "da", "address": None, "city": None, "postal_code": None,
+        "website": None, "salary_expectation": None, "notice_period": None,
+    }
 
 
 @router.put("/me")
 async def update_my_profile(body: dict, user=Depends(get_current_user), supabase=Depends(get_supabase_admin)):
     """Opdaterer brugerens kontaktprofil."""
-    allowed = {"full_name", "email", "phone", "location", "linkedin_url", "display_name", "language"}
+    allowed = {
+        "full_name", "email", "phone", "location", "linkedin_url", "display_name", "language",
+        "address", "city", "postal_code", "website", "salary_expectation", "notice_period",
+    }
     payload = {k: v for k, v in body.items() if k in allowed}
     existing = supabase.table("user_profiles").select("user_id").eq("user_id", user["id"]).limit(1).execute()
     if existing.data:
