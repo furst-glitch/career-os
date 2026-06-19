@@ -17,14 +17,15 @@ from datetime import datetime
 
 
 def _s(text: str) -> str:
-    """Latin-1 safe sanitiser for fpdf Helvetica/Times."""
+    """Latin-1 safe sanitiser for fpdf Helvetica/Times.
+    æ/ø/å/Æ/Ø/Å er i Latin-1 — konverter dem ALDRIG til ae/oe/aa."""
     if not text:
         return ""
     return (
         str(text)
         .replace("—", "-").replace("–", "-").replace("•", "-")
-        .replace("æ", "ae").replace("ø", "oe").replace("å", "aa")
-        .replace("Æ", "Ae").replace("Ø", "Oe").replace("Å", "Aa")
+        .replace("'", "'").replace("'", "'")
+        .replace(""", '"').replace(""", '"')
         .encode("latin-1", errors="replace").decode("latin-1")
     )
 
@@ -135,6 +136,7 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
             body_wrap(line)
 
     # Footer
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-13)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(120, 120, 120)
@@ -434,6 +436,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
             body_wrap(line)
 
     # Double gold footer rule
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-20)
     pdf.set_draw_color(*GOLD)
     pdf.set_line_width(0.2)
@@ -575,6 +578,7 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
             body_wrap(line)
 
     # Minimal footer
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-13)
     pdf.set_draw_color(*LGT)
     pdf.set_line_width(0.2)
@@ -742,6 +746,7 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
             body_wrap(line)
 
     # Footer
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-12)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*GRY)

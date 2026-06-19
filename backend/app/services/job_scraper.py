@@ -141,6 +141,53 @@ def _extract_text(html: str, source: str) -> str:
     return text[:_MAX_CHARS]
 
 
+def _find_external_job_url(html: str) -> str | None:
+    """
+    Find linket til den egentlige stillingsannonce fra en landing-/listeside.
+    Bruges når teksten er for kort til at bruge direkte (jobindholdet er eksternt).
+    Springer kendte job-board-domæner over for at undgå cirkler.
+    """
+    from urllib.parse import urlparse
+
+    _SKIP_DOMAINS = frozenset([
+        "jobindex.dk", "ofir.dk", "jobnet.dk", "linkedin.com",
+        "facebook.com", "twitter.com", "instagram.com", "google.com",
+        "youtube.com", "t.co", "bit.ly",
+    ])
+    _APPLY_RE = re.compile(
+        r"(s[øo]g\s+stillingen|se\s+stillingsopslaget|se\s+opslaget|ansøg\s+nu|apply\s+now|full\s+job|read\s+more)",
+        re.IGNORECASE,
+    )
+
+    # Find alle <a href="...">tekst</a>
+    anchors = re.findall(
+        r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        html,
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    priority: list[str] = []
+    fallback: list[str] = []
+
+    for href, raw_text in anchors:
+        href = href.strip()
+        if not href.startswith("http"):
+            continue
+        try:
+            domain = urlparse(href).netloc.lower().lstrip("www.")
+        except Exception:
+            continue
+        if any(skip in domain for skip in _SKIP_DOMAINS):
+            continue
+        clean_text = re.sub(r"<[^>]+>", "", raw_text).strip()
+        if _APPLY_RE.search(clean_text):
+            priority.append(href)
+        else:
+            fallback.append(href)
+
+    return (priority or fallback or [None])[0]
+
+
 # ── Scrape enkelt job ─────────────────────────────────────────────────────────
 
 async def _scrape_one(
@@ -151,6 +198,7 @@ async def _scrape_one(
     """
     Henter fuld jobtekst for ét job in-place.
     Springer Jobnet over (har allerede API-data).
+    Hvis landing-siden giver for lidt tekst, følges eksternt link til den egentlige annonce.
     """
     source = job.get("source", "")
     url = job.get("url")
@@ -161,6 +209,7 @@ async def _scrape_one(
     if not url:
         return
 
+    html: str | None = None
     async with sem:
         try:
             resp = await client.get(url, headers=_SCRAPE_HEADERS)
@@ -173,6 +222,28 @@ async def _scrape_one(
             return
 
     text = _extract_text(html, source)
+
+    # Hvis landing-siden kun har en teaser (<400 tegn), kig efter eksternt link
+    if len(text) < 400 and html:
+        followup_url = _find_external_job_url(html)
+        if followup_url:
+            followup_html: str | None = None
+            async with sem:
+                try:
+                    resp2 = await client.get(followup_url, headers=_SCRAPE_HEADERS)
+                    if resp2.status_code == 200:
+                        followup_html = resp2.text
+                except Exception as exc:
+                    logger.debug("Followup-scrape fejlede for %s: %s", followup_url, exc)
+            if followup_html:
+                text2 = _extract_text(followup_html, "")
+                if len(text2) > len(text):
+                    text = text2
+                    logger.debug(
+                        "Followup-scrape: %d tegn fra %s",
+                        len(text), followup_url[:80],
+                    )
+
     if len(text) >= 100:
         job["full_description"] = text
         job["scraped_at"] = datetime.now(UTC).isoformat()

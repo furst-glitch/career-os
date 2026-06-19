@@ -305,6 +305,7 @@ async def quickgen(
                 title=title,
                 content=result.content,
                 language=body.language,
+                doc_type=body.doc_type,
             )
             app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
         except Exception as exc:

@@ -329,6 +329,176 @@ def _cv_content_to_docx(cv_data: dict) -> bytes:
     return buf.getvalue()
 
 
+# ── Generated CV renderer (tekst + kontakthoved) ─────────────────────────────
+
+def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
+    """Renderer et AI-genereret CV (plain text/markdown) med kontakthoved."""
+    from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
+
+    BLUE = (30, 64, 175)
+    DARK = (15, 23, 42)
+    GRY = (100, 116, 139)
+    LGT = (148, 163, 184)
+
+    pdf = FPDF()
+    pdf.set_margins(20, 20, 20)
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    # Navn
+    name = _s(
+        profile.get("full_name") or profile.get("display_name") or ""
+    )
+    if name:
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.set_text_color(*DARK)
+        pdf.cell(0, 10, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # Kontaktlinje: email · tlf · lokation
+    contact_parts = []
+    if profile.get("email"):
+        contact_parts.append(_s(profile["email"]))
+    if profile.get("phone"):
+        contact_parts.append(_s(profile["phone"]))
+    if profile.get("location"):
+        contact_parts.append(_s(profile["location"]))
+    if contact_parts:
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*GRY)
+        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    if profile.get("linkedin_url"):
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*GRY)
+        pdf.cell(0, 5, _s(profile["linkedin_url"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # Skillelinje
+    pdf.ln(2)
+    pdf.set_draw_color(*BLUE)
+    pdf.set_line_width(0.5)
+    pdf.line(20, pdf.get_y(), 190, pdf.get_y())
+    pdf.ln(5)
+
+    # Indhold — renderer markdown
+    pdf.set_text_color(*DARK)
+    for raw_line in content.rstrip().split("\n"):
+        line = raw_line.rstrip()
+        if line.startswith("## "):
+            pdf.ln(3)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(*BLUE)
+            pdf.cell(0, 6, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_draw_color(*LGT)
+            pdf.set_line_width(0.2)
+            pdf.line(20, pdf.get_y(), 190, pdf.get_y())
+            pdf.ln(2)
+            pdf.set_text_color(*DARK)
+        elif line.startswith("# "):
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(*DARK)
+            pdf.cell(0, 7, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.set_text_color(*DARK)
+        elif line.startswith("**") and line.endswith("**"):
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(*DARK)
+            pdf.cell(0, 5.5, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        elif line.startswith("- ") or line.startswith("* "):
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*DARK)
+            for wl in textwrap.wrap(line[2:], width=100) or [""]:
+                pdf.cell(5, 5, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
+                pdf.cell(0, 5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        elif line in ("---", "***"):
+            pdf.ln(1)
+            pdf.set_draw_color(*LGT)
+            pdf.set_line_width(0.2)
+            pdf.line(20, pdf.get_y(), 190, pdf.get_y())
+            pdf.ln(2)
+        elif line == "":
+            pdf.ln(3)
+        else:
+            pdf.set_font("Helvetica", "", 9.5)
+            pdf.set_text_color(*DARK)
+            for wl in textwrap.wrap(line, width=105) or [""]:
+                pdf.cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_auto_page_break(auto=False)
+    pdf.set_y(-13)
+    pdf.set_font("Helvetica", "I", 7.5)
+    pdf.set_text_color(*LGT)
+    today = datetime.now().strftime("%d/%m/%Y")
+    pdf.cell(0, 5, f"CareerOS  |  {today}", align="C")
+
+    return bytes(pdf.output())
+
+
+def export_generated_cv_as_pdf(title: str, content: str, profile: dict) -> bytes:
+    return _generated_cv_to_pdf(title, content, profile)
+
+
+def export_generated_cv_as_docx(title: str, content: str, profile: dict) -> bytes:
+    """DOCX-version af genereret CV med kontakthoved."""
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+
+    doc = Document()
+    for section in doc.sections:
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1.2)
+        section.right_margin = Inches(1.2)
+
+    name = profile.get("full_name") or profile.get("display_name") or ""
+    if name:
+        h = doc.add_heading(name, 0)
+        if h.runs:
+            h.runs[0].font.color.rgb = RGBColor(15, 23, 42)
+
+    contact_parts = [
+        v for v in [
+            profile.get("email"), profile.get("phone"),
+            profile.get("location"), profile.get("linkedin_url"),
+        ] if v
+    ]
+    if contact_parts:
+        p = doc.add_paragraph("  ·  ".join(contact_parts))
+        if p.runs:
+            p.runs[0].font.size = Pt(9)
+            p.runs[0].font.color.rgb = RGBColor(100, 116, 139)
+
+    doc.add_paragraph("")
+
+    for raw_line in content.split("\n"):
+        line = raw_line.rstrip()
+        if line.startswith("## "):
+            p = doc.add_heading(line[3:], level=2)
+            if p.runs:
+                p.runs[0].font.color.rgb = RGBColor(30, 64, 175)
+        elif line.startswith("# "):
+            p = doc.add_heading(line[2:], level=1)
+            if p.runs:
+                p.runs[0].font.color.rgb = RGBColor(30, 64, 175)
+        elif line.startswith("**") and line.endswith("**"):
+            p = doc.add_paragraph()
+            run = p.add_run(line[2:-2])
+            run.bold = True
+            run.font.size = Pt(10)
+        elif line.startswith("- ") or line.startswith("* "):
+            doc.add_paragraph(line[2:], style="List Bullet")
+        elif line == "":
+            doc.add_paragraph("")
+        else:
+            p = doc.add_paragraph(line)
+            if p.runs:
+                p.runs[0].font.size = Pt(10)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
 # ── Public interface ──────────────────────────────────────────────────────────
 
 def export_text_as_pdf(

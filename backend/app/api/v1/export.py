@@ -18,6 +18,8 @@ from app.core.deps import get_current_user, get_supabase_admin
 from app.services.export_service import (
     export_cv_as_docx,
     export_cv_as_pdf,
+    export_generated_cv_as_docx,
+    export_generated_cv_as_pdf,
     export_text_as_docx,
     export_text_as_pdf,
 )
@@ -128,17 +130,27 @@ async def export_document_pdf(
         raise HTTPException(404, "Dokument ikke fundet")
     d = doc_row.data[0]
 
-    # Fetch profile for applicant name + default template
-    profile_row = supabase.table("user_profiles").select("display_name, default_app_template").eq("user_id", user["id"]).limit(1).execute()
+    # Fetch profile — inkl. kontaktfelter til CV-export
+    profile_row = supabase.table("user_profiles").select(
+        "display_name, full_name, email, phone, location, linkedin_url, "
+        "default_cv_template, default_app_template"
+    ).eq("user_id", user["id"]).limit(1).execute()
     profile = profile_row.data[0] if profile_row.data else {}
-    applicant_name = profile.get("display_name") or ""
-    resolved = template if template in APP_TEMPLATES else (
-        profile.get("default_app_template") or "corporate"
-    )
 
-    title = d.get("title") or "Ansøgning"
+    title = d.get("title") or "Dokument"
     content = d.get("content") or ""
-    pdf_bytes = export_text_as_pdf(title, content, resolved, applicant_name)
+    doc_type = d.get("document_type") or ""
+    is_cv = doc_type == "cv" or title.startswith("CV")
+
+    if is_cv:
+        pdf_bytes = export_generated_cv_as_pdf(title, content, profile)
+    else:
+        applicant_name = profile.get("display_name") or ""
+        resolved = template if template in APP_TEMPLATES else (
+            profile.get("default_app_template") or "corporate"
+        )
+        pdf_bytes = export_text_as_pdf(title, content, resolved, applicant_name)
+
     filename = _safe_filename(title) + ".pdf"
     return Response(
         content=pdf_bytes,
@@ -159,16 +171,26 @@ async def export_document_docx(
         raise HTTPException(404, "Dokument ikke fundet")
     d = doc_row.data[0]
 
-    profile_row = supabase.table("user_profiles").select("display_name, default_app_template").eq("user_id", user["id"]).limit(1).execute()
+    profile_row = supabase.table("user_profiles").select(
+        "display_name, full_name, email, phone, location, linkedin_url, "
+        "default_cv_template, default_app_template"
+    ).eq("user_id", user["id"]).limit(1).execute()
     profile = profile_row.data[0] if profile_row.data else {}
-    applicant_name = profile.get("display_name") or ""
-    resolved = template if template in APP_TEMPLATES else (
-        profile.get("default_app_template") or "corporate"
-    )
 
-    title = d.get("title") or "Ansøgning"
+    title = d.get("title") or "Dokument"
     content = d.get("content") or ""
-    docx_bytes = export_text_as_docx(title, content, resolved, applicant_name)
+    doc_type = d.get("document_type") or ""
+    is_cv = doc_type == "cv" or title.startswith("CV")
+
+    if is_cv:
+        docx_bytes = export_generated_cv_as_docx(title, content, profile)
+    else:
+        applicant_name = profile.get("display_name") or ""
+        resolved = template if template in APP_TEMPLATES else (
+            profile.get("default_app_template") or "corporate"
+        )
+        docx_bytes = export_text_as_docx(title, content, resolved, applicant_name)
+
     filename = _safe_filename(title) + ".docx"
     return Response(
         content=docx_bytes,

@@ -113,8 +113,9 @@ class ApplicationService:
         title: str,
         content: str,
         language: str,
+        doc_type: str = "cover_letter",
     ) -> dict:
-        """Gemmer AI-genereret ansøgning som document_version og tilknytter til pipeline."""
+        """Gemmer AI-genereret dokument (CV eller ansøgning) som document_version."""
         import hashlib
         mcv = self.db.table("master_cvs").select("id").eq("user_id", user_id).limit(1).execute()
         mcv_id = mcv.data[0]["id"] if mcv.data else None
@@ -123,12 +124,13 @@ class ApplicationService:
             self.db.table("document_versions")
             .select("version_number")
             .eq("pipeline_id", pipeline_id)
-            .eq("document_type", "cover_letter")
+            .eq("document_type", doc_type)
             .order("version_number", desc=True)
             .limit(1)
             .execute()
         )
         next_version = (existing.data[0]["version_number"] + 1) if existing.data else 1
+        doc_role = "cv" if doc_type == "cv" else "cover_letter"
 
         doc = self.db.table("document_versions").insert({
             "user_id": user_id,
@@ -139,11 +141,11 @@ class ApplicationService:
             "content_hash": hashlib.sha256(content.encode()).hexdigest(),
             "language": language,
             "version_number": next_version,
-            "document_type": "cover_letter",
+            "document_type": doc_type,
             "generated_by": "ai",
         }).execute()
         doc_id = doc.data[0]["id"]
-        self.add_document(user_id, pipeline_id, doc_id, "cover_letter")
+        self.add_document(user_id, pipeline_id, doc_id, doc_role)
         return doc.data[0]
 
     def get_document_content(self, user_id: str, document_id: str) -> dict | None:
