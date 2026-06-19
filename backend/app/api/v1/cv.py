@@ -37,7 +37,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 @router.post("/upload")
 async def upload_cv(
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
