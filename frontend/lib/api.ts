@@ -156,12 +156,19 @@ export async function apiUploadStream<T>(
   throw new Error("Ingen resultat modtaget fra serveren");
 }
 
+export type GenerateProgressEvent = {
+  step: string;
+  pct: number;
+  msg: string;
+};
+
 export async function apiStream(
   path: string,
   body: unknown,
   onChunk: (content: string) => void,
   onDone?: (payload?: Record<string, unknown>) => void,
-  onError?: (error: string) => void
+  onError?: (error: string) => void,
+  onProgress?: (evt: GenerateProgressEvent) => void,
 ): Promise<void> {
   const headers = await getAuthHeader();
   const res = await fetch(`${API_URL}${path}`, {
@@ -196,6 +203,8 @@ export async function apiStream(
         const payload = JSON.parse(dataLine.slice(6));
         if (payload.type === "chunk" && payload.content) {
           onChunk(payload.content);
+        } else if (payload.type === "progress") {
+          onProgress?.({ step: payload.step as string, pct: payload.pct as number, msg: payload.msg as string });
         } else if (payload.type === "done") {
           onDone?.(payload);
         } else if (payload.type === "error") {

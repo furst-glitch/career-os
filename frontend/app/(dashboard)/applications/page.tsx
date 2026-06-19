@@ -138,6 +138,8 @@ function CoverLetterModal({
   const [style, setStyle] = useState("professional");
   const [focus, setFocus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progressPct, setProgressPct] = useState(0);
+  const [progressMsg, setProgressMsg] = useState("");
   const [content, setContent] = useState("");
   const [docId, setDocId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -155,11 +157,13 @@ function CoverLetterModal({
   async function generate() {
     setLoading(true);
     setError(null);
+    setProgressPct(0);
+    setProgressMsg(lang === "da" ? "Starter..." : "Starting...");
     try {
       await apiStream(
         `/applications/${app.id}/generate`,
         { language: lang, writing_style: style, focus_areas: focus || undefined },
-        () => {}, // ingen token-streaming — content kommer i done-event
+        () => {},
         (payload) => {
           if (payload?.content) setContent(payload.content as string);
           if (payload?.document_id) setDocId(payload.document_id as string);
@@ -171,12 +175,17 @@ function CoverLetterModal({
             setError(errMsg || "Generering fejlede");
           }
         },
+        (evt) => {
+          setProgressPct(evt.pct);
+          setProgressMsg(evt.msg);
+        },
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Generering fejlede";
       setError(msg);
     } finally {
       setLoading(false);
+      setProgressPct(100);
     }
   }
 
@@ -326,6 +335,24 @@ function CoverLetterModal({
               value={content}
               onChange={e => setContent(e.target.value)}
             />
+          ) : loading ? (
+            <div className="flex h-full flex-col items-center justify-center gap-4 px-8">
+              <div className="w-full max-w-sm">
+                <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+                  <span>{progressMsg}</span>
+                  <span>{progressPct}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <p className="mt-3 text-center text-xs text-slate-400">
+                  ATS, HR og hiring manager gennemgår udkastet parallelt...
+                </p>
+              </div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center">
               <div className="text-center text-slate-400">
@@ -335,7 +362,7 @@ function CoverLetterModal({
                   <line x1="16" y1="13" x2="8" y2="13"/>
                   <line x1="16" y1="17" x2="8" y2="17"/>
                 </svg>
-                <p className="text-sm">Klik på "Generer ansøgning" for at starte</p>
+                <p className="text-sm">Klik på &quot;Generer ansøgning&quot; for at starte</p>
               </div>
             </div>
           )}

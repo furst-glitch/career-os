@@ -248,7 +248,7 @@ async def quickgen(
                     "writing_style": body.writing_style,
                     "focus_areas": body.focus_areas,
                     "doc_type": body.doc_type,
-                })
+                }, queue=queue)
                 await queue.put(("ok", r))
             except NoProviderKeyError as exc:
                 await queue.put(("no_key", str(exc)))
@@ -260,7 +260,10 @@ async def quickgen(
         while True:
             try:
                 kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
-                if kind == "ok":
+                if kind == "progress":
+                    yield f"data: {_json.dumps({'type': 'progress', **payload})}\n\n"
+                    continue
+                elif kind == "ok":
                     result = payload
                 elif kind == "no_key":
                     yield f"data: {_json.dumps({'type': 'error', 'code': 'no_api_key', 'message': payload})}\n\n"
