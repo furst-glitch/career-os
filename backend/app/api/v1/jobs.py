@@ -26,10 +26,10 @@ def _svc(supabase) -> JobService:
     return JobService(supabase)
 
 
-def _snapshot(user_id: str, supabase) -> dict:
+def _snapshot(user_id: str, supabase, force: bool = False) -> dict:
     """Henter karriere-snapshot til match-beregning. Returnerer tomt dict ved fejl."""
     try:
-        return MemorySnapshotService(supabase).snapshot(user_id)
+        return MemorySnapshotService(supabase).snapshot(user_id, force=force)
     except Exception:
         return {}
 
@@ -223,7 +223,7 @@ async def quickgen(
         new_entry = app_svc.create_pipeline(user["id"], job_id, {"status": "gemt", "priority": "medium"})
         pipeline_id = new_entry["id"]
 
-    snapshot = _snapshot(user["id"], supabase)
+    snapshot = _snapshot(user["id"], supabase, force=True)
     candidate_summary = snapshot.get("text_summary", "")
 
     is_cv = body.doc_type == "cv"

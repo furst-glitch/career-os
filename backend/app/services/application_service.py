@@ -90,7 +90,7 @@ class ApplicationService:
             self.db.table("pipeline_documents")
             .select(
                 "id, document_role, added_at,"
-                "document_versions(id, title, version_number, language, document_type, generated_by, created_at)"
+                "document_versions(id, title, version_number, language, document_type, generated_by, created_at, content)"
             )
             .eq("pipeline_id", pipeline_id)
             .execute()

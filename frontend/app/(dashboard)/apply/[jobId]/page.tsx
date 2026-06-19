@@ -206,6 +206,37 @@ export default function ApplyWorkspacePage() {
       if (data.pipeline_id) {
         setPipelineId(data.pipeline_id);
         setPipelineStatus(data.pipeline_status);
+        // Hent eksisterende dokumenter så de ikke forsvinder ved navigation
+        try {
+          const docsRes = await apiGet<{
+            documents: Array<{
+              document_role: string;
+              document_versions: {
+                id: string;
+                title: string;
+                content: string;
+                document_type: string;
+              } | null;
+            }>;
+          }>(`/applications/${data.pipeline_id}/documents`);
+
+          for (const doc of docsRes.documents ?? []) {
+            const dv = doc.document_versions;
+            if (!dv?.content) continue;
+            const loaded: DocState = {
+              step: "done",
+              pct: 100,
+              msg: "",
+              content: dv.content,
+              docId: dv.id,
+              error: null,
+            };
+            if (doc.document_role === "cv") setCv(loaded);
+            else if (doc.document_role === "cover_letter") setApp(loaded);
+          }
+        } catch {
+          // Dokument-load fejler stille — user kan regenerere
+        }
       }
     } catch {
       // ignore

@@ -10,11 +10,13 @@ from datetime import datetime
 
 
 def _s(text: str) -> str:
-    """Sanitize text for fpdf Helvetica (Latin-1). Replace common non-ASCII with ASCII equiv."""
+    """Sanitize text for fpdf Helvetica (Latin-1 / ISO 8859-1).
+    æ/ø/å/Æ/Ø/Å ER i Latin-1 — konverter dem ALDRIG til ae/oe/aa."""
     return (
-        text.replace("—", "-").replace("–", "-").replace("•", "-")
-        .replace("æ", "ae").replace("ø", "oe").replace("å", "aa")
-        .replace("Æ", "Ae").replace("Ø", "Oe").replace("Å", "Aa")
+        text.replace("—", "-").replace("–", "-")
+        .replace("•", "-").replace("·", "-")
+        .replace("‘", "'").replace("’", "'")
+        .replace("“", '"').replace("”", '"')
         .encode("latin-1", errors="replace").decode("latin-1")
     )
 
@@ -39,7 +41,7 @@ def _pdf_from_text(title: str, content: str) -> bytes:
     pdf.ln(4)
 
     pdf.set_text_color(30, 41, 59)
-    for raw_line in content.split("\n"):
+    for raw_line in content.rstrip().split("\n"):
         line = raw_line.rstrip()
         if line.startswith("## "):
             pdf.ln(3)
@@ -73,6 +75,7 @@ def _pdf_from_text(title: str, content: str) -> bytes:
             for wl in textwrap.wrap(line, width=100) or [""]:
                 pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-15)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(148, 163, 184)
@@ -190,6 +193,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
             pdf.cell(0, 5.5, _s(cert_line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
+    pdf.set_auto_page_break(auto=False)
     pdf.set_y(-13)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(148, 163, 184)

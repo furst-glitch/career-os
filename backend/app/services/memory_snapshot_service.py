@@ -216,11 +216,19 @@ class MemorySnapshotService:
             lines.append(f"SAMMENFATNING: {profile['summary']}")
 
         if experience:
-            exp_str = "; ".join(
-                f"{e['title']} @ {e['company']}" + (" (nu)" if e.get("is_current") else "")
-                for e in experience[:3]
-            )
-            lines.append(f"ERFARING: {exp_str}")
+            exp_parts = []
+            for e in experience[:5]:
+                start = (e.get("period_start") or "")[:7]
+                end = "nu" if e.get("is_current") else (e.get("period_end") or "")[:7]
+                period = f"{start}–{end}" if start else ("nu" if e.get("is_current") else "")
+                desc = e.get("description") or ""
+                achiev = "; ".join((e.get("achievements") or [])[:2])
+                detail = (achiev or desc)[:120]
+                entry = f"{e['title']} @ {e['company']} [{period}]"
+                if detail:
+                    entry += f": {detail}"
+                exp_parts.append(entry)
+            lines.append("ERFARING:\n" + "\n".join(f"  - {p}" for p in exp_parts))
 
         if skills:
             skill_names = ", ".join(s["name"] for s in skills[:12])
