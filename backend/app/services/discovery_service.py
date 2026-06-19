@@ -162,13 +162,16 @@ class DiscoveryService:
             yield json.dumps({"type": "done"})
             return
 
-        profile = self._build_profile_summary(user_id)
-        gaps = self.exp_service.list_open_gaps(user_id)
-
-        if gaps or profile.get("has_content"):
-            system_prompt = self._build_system_prompt(profile, gaps)
-        else:
-            system_prompt = FRESH_START_SYSTEM
+        try:
+            profile = self._build_profile_summary(user_id)
+            gaps = self.exp_service.list_open_gaps(user_id)
+            if gaps or profile.get("has_content"):
+                system_prompt = self._build_system_prompt(profile, gaps)
+            else:
+                system_prompt = FRESH_START_SYSTEM
+        except Exception as exc:
+            yield json.dumps({"type": "error", "content": f"Fejl ved profilhentning: {exc}"})
+            return
 
         WELCOME_TRIGGER = (
             "Start interviewet med en varm, professionel velkomst. "
@@ -244,14 +247,16 @@ class DiscoveryService:
             yield json.dumps({"type": "error", "content": "Session ikke fundet"})
             return
 
-        profile = self._build_profile_summary(user_id)
-        gaps = self.exp_service.list_open_gaps(user_id)
-
-        # Byg system prompt baseret på om der er en profil
-        if gaps or profile.get("has_content"):
-            system_prompt = self._build_system_prompt(profile, gaps)
-        else:
-            system_prompt = FRESH_START_SYSTEM
+        try:
+            profile = self._build_profile_summary(user_id)
+            gaps = self.exp_service.list_open_gaps(user_id)
+            if gaps or profile.get("has_content"):
+                system_prompt = self._build_system_prompt(profile, gaps)
+            else:
+                system_prompt = FRESH_START_SYSTEM
+        except Exception as exc:
+            yield json.dumps({"type": "error", "content": f"Fejl ved profilhentning: {exc}"})
+            return
 
         prior_messages = session.get("messages") or []
         messages = [
@@ -394,8 +399,10 @@ class DiscoveryService:
         mcv_id = mcv["id"]
 
         exps = self.db.table("cv_experiences").select("title, company, period_start, period_end").eq("master_cv_id", mcv_id).order("period_start", desc=True).execute().data
-        skills = self.db.table("cv_skills").select("name").eq("master_cv_id", mcv_id).limit(10).execute().data
-        projs = self.db.table("cv_projects").select("name").eq("master_cv_id", mcv_id).execute().data
+        # Fetch as dicts (not just names) — ProfileCompletenessService.calculate() calls
+        # s.get("category") and p.get("outcomes") on these, which crashes on bare strings.
+        skills = self.db.table("cv_skills").select("name, category, level").eq("master_cv_id", mcv_id).limit(10).execute().data
+        projs = self.db.table("cv_projects").select("name, technologies, outcomes").eq("master_cv_id", mcv_id).execute().data
 
         return {
             "has_content": bool(exps),
@@ -403,8 +410,8 @@ class DiscoveryService:
             "target_title": mcv.get("target_title"),
             "summary": mcv.get("summary"),
             "experiences": exps,
-            "skills": [s["name"] for s in skills],
-            "projects": [p["name"] for p in projs],
+            "skills": skills,   # list of dicts: {name, category, level}
+            "projects": projs,  # list of dicts: {name, technologies, outcomes}
         }
 
     @staticmethod
@@ -422,7 +429,6 @@ class DiscoveryService:
             for e in exps[:5]
         )
         skills = profile.get("skills") or []
-        # _build_profile_summary returnerer skills som en liste af strings
         skills_str = ", ".join(
             s if isinstance(s, str) else s.get("name", "")
             for s in skills[:10]

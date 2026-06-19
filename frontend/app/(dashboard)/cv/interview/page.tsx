@@ -45,6 +45,7 @@ export default function InterviewPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scoreRefresh, setScoreRefresh] = useState(0);
+  const [coldStartWait, setColdStartWait] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,6 +59,12 @@ export default function InterviewPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function initSession() {
+    setLoading(true);
+    setError(null);
+
+    // Show cold-start hint after 5 seconds of waiting
+    const coldTimer = setTimeout(() => setColdStartWait(true), 5000);
+
     try {
       const result = await apiPost<StartResult>("/discovery/start", {});
       setSessionId(result.session_id);
@@ -86,6 +93,8 @@ export default function InterviewPage() {
       setError(err instanceof Error ? err.message : "Kunne ikke starte interview.");
       setMessages([STATIC_WELCOME]);
     } finally {
+      clearTimeout(coldTimer);
+      setColdStartWait(false);
       setLoading(false);
     }
   }
@@ -100,7 +109,11 @@ export default function InterviewPage() {
   }
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || !sessionId || sending) return;
+    if (!input.trim() || sending) return;
+    if (!sessionId) {
+      setError("Session ikke klar — prøv at genindlæse siden.");
+      return;
+    }
 
     const userMsg = input.trim();
     setInput("");
@@ -210,6 +223,11 @@ export default function InterviewPage() {
                 />
               </svg>
               <p className="text-sm text-slate-500">Forbereder interview…</p>
+              {coldStartWait && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Backend starter op — dette kan tage 30-60 sek.
+                </p>
+              )}
             </div>
           </div>
         ) : (
@@ -276,12 +294,22 @@ export default function InterviewPage() {
             {error && (
               <div className="mt-2 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2">
                 <p className="text-xs text-red-700">{error}</p>
-                <button
-                  className="text-xs text-red-500 underline"
-                  onClick={() => setError(null)}
-                >
-                  Luk
-                </button>
+                <div className="flex gap-3">
+                  {!sessionId && (
+                    <button
+                      className="text-xs font-medium text-blue-600 underline"
+                      onClick={initSession}
+                    >
+                      Prøv igen
+                    </button>
+                  )}
+                  <button
+                    className="text-xs text-red-500 underline"
+                    onClick={() => setError(null)}
+                  >
+                    Luk
+                  </button>
+                </div>
               </div>
             )}
 
