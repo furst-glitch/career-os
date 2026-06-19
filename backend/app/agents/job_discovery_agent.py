@@ -56,17 +56,17 @@ class JobDiscoveryAgent(BaseAgent):
         )
 
         try:
-            provider = LiteLLMProvider(
-                user_id=self.user_id,
-                supabase=self.supabase,
-            )
+            provider = LiteLLMProvider(self.user_id)
             response = await provider.complete(
-                system=_SYSTEM,
-                user=prompt,
+                agent_name=self.name,
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user", "content": prompt},
+                ],
                 max_tokens=800,
                 temperature=0.1,
             )
-            raw = response.strip()
+            raw = response.choices[0].message.content.strip()
             # Strip markdown code fences if present
             if raw.startswith("```"):
                 raw = raw.split("```")[1]

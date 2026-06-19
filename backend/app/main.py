@@ -25,4 +25,10 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/health", tags=["System"])
 async def health() -> dict:
-    return {"status": "ok", "version": "0.1.0"}
+    from app.core.security import encrypt, decrypt
+    try:
+        assert decrypt(encrypt("ping")) == "ping"
+        crypto = "ok"
+    except Exception as e:
+        crypto = f"FAILED: {e}"
+    return {"status": "ok", "version": "0.1.0", "crypto": crypto}

@@ -32,12 +32,23 @@ class LiteLLMProvider:
     async def _get_agent_config(self, agent_name: str) -> dict:
         result = (
             self.supabase.table("agent_registry")
-            .select("*, agent_configurations(model_override, provider_override, temperature_override)")
+            .select("*")
             .eq("name", agent_name)
             .single()
             .execute()
         )
-        return result.data or {}
+        config = result.data or {}
+        if config:
+            override_result = (
+                self.supabase.table("agent_configurations")
+                .select("model_override, provider_override, temperature_override")
+                .eq("agent_id", config["id"])
+                .eq("user_id", self.user_id)
+                .limit(1)
+                .execute()
+            )
+            config["agent_configurations"] = override_result.data or []
+        return config
 
     def _check_budget(self) -> None:
         if self._used_user_key:

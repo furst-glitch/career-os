@@ -61,7 +61,14 @@ async def upsert_provider(
     user=Depends(get_current_user),
 ):
     """Tilføj eller opdater en API-nøgle. For Ollama sendes base URL i 'key'-feltet."""
-    await KeyManager.store_key(user["id"], body.provider, body.key)
+    try:
+        await KeyManager.store_key(user["id"], body.provider, body.key)
+    except ValueError as exc:
+        raise HTTPException(
+            500,
+            f"Krypteringsfejl — ENCRYPTION_KEY på serveren er ugyldig: {exc}. "
+            "Generér en ny nøgle: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"",
+        )
     return {"provider": body.provider, "status": "gemt"}
 
 
