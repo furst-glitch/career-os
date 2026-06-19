@@ -448,15 +448,18 @@ Tone: Professionel, aktiv stemme, præcis. Ingen klichéer."""
         ]
 
         full_cv = ""
-        llm = LiteLLMProvider(user_id)
-        response = await llm.complete(CV_AGENT, messages, stream=True, temperature=0.4, max_tokens=3000)
-        async for chunk in response:
-            delta = chunk.choices[0].delta.content or ""
-            if delta:
-                full_cv += delta
-                yield json.dumps({"type": "chunk", "content": delta})
-
-        await cv_service.save_master_cv_content(user_id, full_cv)
+        try:
+            llm = LiteLLMProvider(user_id)
+            response = await llm.complete(CV_AGENT, messages, stream=True, temperature=0.4, max_tokens=3000)
+            async for chunk in response:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    full_cv += delta
+                    yield json.dumps({"type": "chunk", "content": delta})
+            await cv_service.save_master_cv_content(user_id, full_cv)
+        except Exception as exc:
+            yield json.dumps({"type": "error", "content": str(exc)})
+            return
         yield json.dumps({"type": "done"})
 
     # ─── Helpers ─────────────────────────────────────────────────────────────

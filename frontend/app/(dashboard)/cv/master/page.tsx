@@ -119,6 +119,8 @@ export default function MasterCVPage() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generering mislykkedes");
+    } finally {
+      // Fallback: ensure spinner always stops even if onDone/onError weren't called
       setGenerating(false);
     }
   }

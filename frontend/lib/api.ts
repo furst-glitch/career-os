@@ -177,42 +177,65 @@ export async function apiStream(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  if (!res.ok) {
+    // Read error body so callers get a useful message instead of just "HTTP 422"
+    const text = await res.text().catch(() => "");
+    let detail = text;
+    try { detail = (JSON.parse(text) as { detail?: string; message?: string }).detail ?? (JSON.parse(text) as { message?: string }).message ?? text; } catch { /* use raw text */ }
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
   if (!res.body) return;
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let doneCalled = false;
+
+  function dispatchEvent(event: string): void {
+    // Skip SSE comment lines (": ping" keep-alive)
+    if (event.trimStart().startsWith(":")) return;
+    const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
+    if (!dataLine) return;
+    try {
+      const payload = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
+      if (payload.type === "chunk" && payload.content) {
+        onChunk(payload.content as string);
+      } else if (payload.type === "progress") {
+        onProgress?.({ step: payload.step as string, pct: payload.pct as number, msg: payload.msg as string });
+      } else if (payload.type === "done") {
+        doneCalled = true;
+        onDone?.(payload);
+      } else if (payload.type === "error") {
+        onError?.(((payload.content ?? payload.message) as string | undefined) ?? "Ukendt fejl");
+      }
+    } catch {
+      // Skip malformed SSE events
+    }
+  }
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-
+    if (done) {
+      // Flush any bytes the TextDecoder was holding in streaming mode
+      buffer += decoder.decode();
+      break;
+    }
     buffer += decoder.decode(value, { stream: true });
 
     // SSE events are separated by double newline
     const events = buffer.split("\n\n");
     buffer = events.pop() ?? "";
-
-    for (const event of events) {
-      // Skip SSE comment lines (": ping" keep-alive)
-      if (event.trimStart().startsWith(":")) continue;
-      const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
-      if (!dataLine) continue;
-      try {
-        const payload = JSON.parse(dataLine.slice(6));
-        if (payload.type === "chunk" && payload.content) {
-          onChunk(payload.content);
-        } else if (payload.type === "progress") {
-          onProgress?.({ step: payload.step as string, pct: payload.pct as number, msg: payload.msg as string });
-        } else if (payload.type === "done") {
-          onDone?.(payload);
-        } else if (payload.type === "error") {
-          onError?.(payload.content ?? payload.message ?? "Ukendt fejl");
-        }
-      } catch {
-        // Skip malformed events
-      }
-    }
+    events.forEach(dispatchEvent);
   }
+
+  // Process events that arrived in the same TCP frame as the stream-close signal.
+  // This is the common case for the final "done" event — the server sends it and
+  // immediately closes the connection, so it arrives with done=true from the reader.
+  if (buffer.trim()) {
+    buffer.split("\n\n").filter(Boolean).forEach(dispatchEvent);
+  }
+
+  // Fallback: backend closed the stream without sending a {"type":"done"} event.
+  // Notify the caller so it can reset loading state and avoid a permanent spinner.
+  if (!doneCalled) onDone?.();
 }

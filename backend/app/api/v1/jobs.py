@@ -279,14 +279,18 @@ async def quickgen(
             except TimeoutError:
                 yield ": ping\n\n"
 
-        doc = app_svc.save_cover_letter(
-            user_id=user["id"],
-            pipeline_id=pipeline_id,
-            title=title,
-            content=result.content,
-            language=body.language,
-        )
-        app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
+        try:
+            doc = app_svc.save_cover_letter(
+                user_id=user["id"],
+                pipeline_id=pipeline_id,
+                title=title,
+                content=result.content,
+                language=body.language,
+            )
+            app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
+        except Exception as exc:
+            yield f"data: {_json.dumps({'type': 'error', 'message': f'Kunne ikke gemme dokument: {exc}'})}\n\n"
+            return
 
         yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': title, 'content': result.content, 'pipeline_id': pipeline_id, 'pipeline_status': new_status})}\n\n"
 
