@@ -38,19 +38,14 @@ async def _generate_embedding(text: str, user_id: str, supabase) -> list[float] 
         from app.providers.key_manager import KeyManager
         import litellm
 
-        km = KeyManager(supabase)
-        api_key = km.get_key(user_id, "openai")
+        api_key = await KeyManager.get_key(user_id, "openai")
         if not api_key:
             return None
 
-        loop = asyncio.get_event_loop()
-        resp = await loop.run_in_executor(
-            None,
-            lambda: litellm.embedding(
-                model="text-embedding-3-small",
-                input=text,
-                api_key=api_key,
-            ),
+        resp = await litellm.aembedding(
+            model="text-embedding-3-small",
+            input=text,
+            api_key=api_key,
         )
         return resp.data[0]["embedding"]
     except Exception:

@@ -56,13 +56,46 @@ async def welcome_message(
         raise HTTPException(400, "Sessionen er ikke aktiv")
 
     async def event_stream():
-        async for chunk in service.stream_welcome(session_id, user["id"]):
-            yield f"data: {chunk}\n\n"
+        import asyncio
+
+        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+        async def producer():
+            try:
+                async for chunk in service.stream_welcome(session_id, user["id"]):
+                    await queue.put(("data", chunk))
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                await queue.put(("data", f'{{"type":"error","content":"{exc}"}}'))
+            finally:
+                try:
+                    queue.put_nowait(("done", ""))
+                except asyncio.QueueFull:
+                    pass
+
+        task = asyncio.create_task(producer())
+        try:
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if kind == "done":
+                    break
+                yield f"data: {payload}\n\n"
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"X-Accel-Buffering": "no"},
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
 

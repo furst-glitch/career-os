@@ -44,7 +44,7 @@ class BaseAgent(ABC):
             self.supabase.table("agent_registry")
             .select("*, agent_configurations(*)")
             .eq("name", self.name)
-            .single()
+            .maybe_single()
             .execute()
         )
         return result.data or {}

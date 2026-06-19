@@ -34,7 +34,7 @@ class LiteLLMProvider:
             self.supabase.table("agent_registry")
             .select("*")
             .eq("name", agent_name)
-            .single()
+            .maybe_single()
             .execute()
         )
         config = result.data or {}
@@ -58,7 +58,7 @@ class LiteLLMProvider:
             self.supabase.table("ai_budgets")
             .select("monthly_limit_usd, warning_threshold, hard_limit, current_spend_usd")
             .eq("user_id", self.user_id)
-            .single()
+            .maybe_single()
             .execute()
         )
 
@@ -244,7 +244,13 @@ class LiteLLMProvider:
                     else:
                         fallback_litellm = f"{resolved_provider}/{fallback_model}"
                     fallback_kwargs = {**call_kwargs, "model": fallback_litellm}
-                    response = await litellm.acompletion(**fallback_kwargs)
+                    try:
+                        response = await litellm.acompletion(**fallback_kwargs)
+                    except Exception as fallback_exc:
+                        raise NoProviderKeyError(
+                            f"Model '{model}' og fallback '{fallback_model}' fejlede for '{resolved_provider}'. "
+                            f"Tjek din API-nøgle og prøv igen."
+                        ) from fallback_exc
                     self._latency_ms = int((time.time() - start) * 1000)
                     return response
             # Re-raise everything else (NoProviderKeyError, BudgetExceeded, etc.)

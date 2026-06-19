@@ -166,6 +166,7 @@ async def validate_provider(body: ValidateProviderRequest):
                 messages=[{"role": "user", "content": "ping"}],
                 api_base=key,
                 max_tokens=1,
+                timeout=10,
             )
         elif provider == "openai":
             await litellm.acompletion(
@@ -173,6 +174,7 @@ async def validate_provider(body: ValidateProviderRequest):
                 messages=[{"role": "user", "content": "ping"}],
                 api_key=key,
                 max_tokens=1,
+                timeout=10,
             )
         elif provider == "anthropic":
             await litellm.acompletion(
@@ -180,6 +182,7 @@ async def validate_provider(body: ValidateProviderRequest):
                 messages=[{"role": "user", "content": "ping"}],
                 api_key=key,
                 max_tokens=1,
+                timeout=10,
             )
         else:
             return {"valid": False, "error": f"Validering ikke understøttet for '{provider}'"}
