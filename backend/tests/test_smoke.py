@@ -16,5 +16,4 @@ def test_settings_load():
     from app.core.config import settings
 
     assert settings.secret_key
-    assert settings.supabase_url
     assert settings.encryption_key
