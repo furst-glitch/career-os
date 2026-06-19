@@ -20,6 +20,11 @@ class JobResult:
     source: str = "unknown"
     external_id: str | None = None
     deadline: str | None = None
+    # Udfyldes af JobScraper efter initial fetch
+    full_description: str | None = None
+    responsibilities: str | None = None
+    company_description: str | None = None
+    scraped_at: str | None = None
 
     def dedup_key(self) -> str:
         """Stable key for deduplication across sources."""
@@ -42,6 +47,10 @@ class JobResult:
             "source": self.source,
             "external_id": self.external_id,
             "deadline": self.deadline,
+            "full_description": self.full_description,
+            "responsibilities": self.responsibilities,
+            "company_description": self.company_description,
+            "scraped_at": self.scraped_at,
         }
 
 

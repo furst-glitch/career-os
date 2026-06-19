@@ -240,10 +240,12 @@ async def quickgen(
         async def run_agent():
             try:
                 agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
+                # Brug fuld beskrivelse (scraped) når tilgængelig — giver bedre AI-output
+                full_desc = job.get("full_description") or job.get("description") or ""
                 r = await agent.run({
                     "job_title": job.get("title", ""),
                     "job_company": job.get("company", ""),
-                    "job_description": job.get("description", ""),
+                    "job_description": full_desc,
                     "job_requirements": job.get("requirements", []),
                     "candidate_summary": candidate_summary,
                     "language": body.language,

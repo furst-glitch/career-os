@@ -20,6 +20,7 @@ interface DiscoveredJob {
   location: string | null;
   url: string | null;
   description: string | null;
+  full_description: string | null;
   requirements: string[];
   job_type: string;
   remote_type: string;
@@ -32,10 +33,13 @@ interface DiscoveredJob {
   match_breakdown: {
     skills: number;
     experience: number;
+    profile: number;
     preferences: number;
     certifications: number;
   };
   matched_skills: string[];
+  missing_requirements: string[];
+  text_chars_used: number;
   ai_summary?: string;
 }
 
@@ -44,6 +48,7 @@ interface SearchResult {
   query: string;
   location: string | null;
   total: number;
+  scraped_count: number;
   source_stats: Record<string, number>;
   results: DiscoveredJob[];
 }
@@ -76,6 +81,14 @@ const SOURCE_COLORS: Record<string, string> = {
   indeed: "bg-indigo-100 text-indigo-700",
 };
 
+const BREAKDOWN_LABELS: Record<string, string> = {
+  skills: "Kompetencer",
+  experience: "Erfaring",
+  profile: "Profil",
+  preferences: "Præferencer",
+  certifications: "Certifikater",
+};
+
 // ── Match Badge ───────────────────────────────────────────────────────────────
 
 function MatchBadge({ score }: { score: number }) {
@@ -86,7 +99,7 @@ function MatchBadge({ score }: { score: number }) {
                 "bg-slate-100 text-slate-600 ring-slate-200";
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${color}`}>
-      {pct}% match
+      {pct}%
     </span>
   );
 }
@@ -96,17 +109,18 @@ function MatchBadge({ score }: { score: number }) {
 function JobCard({
   job,
   onSave,
-  onGenerateApplication,
   savedIds,
 }: {
   job: DiscoveredJob;
   onSave: (job: DiscoveredJob) => void;
-  onGenerateApplication: (job: DiscoveredJob, savedJobId: string) => void;
   savedIds: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const isSaved = savedIds.has(job.external_id ?? `${job.title}|${job.company}`);
+
+  const displayText = job.full_description || job.description || null;
+  const isScraped = !!job.full_description;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
@@ -119,6 +133,11 @@ function JobCard({
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${SOURCE_COLORS[job.source] ?? "bg-slate-100 text-slate-600"}`}>
                 {job.source}
               </span>
+              {isScraped && (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-600 ring-1 ring-emerald-200">
+                  fuld tekst
+                </span>
+              )}
             </div>
             <p className="mt-0.5 text-sm font-medium text-slate-600">{job.company}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -138,68 +157,97 @@ function JobCard({
               <p className="mt-2 text-xs italic text-slate-500">{job.ai_summary}</p>
             )}
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 text-right">
             <MatchBadge score={job.match_score} />
+            {job.text_chars_used > 0 && (
+              <p className="mt-1 text-xs text-slate-300">{(job.text_chars_used / 1000).toFixed(1)}k tegn</p>
+            )}
           </div>
         </div>
 
-        {/* Matched skills */}
-        {job.matched_skills.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {job.matched_skills.map(s => (
-              <span key={s} className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-200">
-                {s}
-              </span>
-            ))}
+        {/* ── Match forklaring ── */}
+        {(job.matched_skills.length > 0 || job.missing_requirements.length > 0) && (
+          <div className="mt-3 space-y-1.5">
+            {/* Matches — grønne pills */}
+            {job.matched_skills.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {job.matched_skills.map(s => (
+                  <span key={s} className="rounded bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-200">
+                    ✓ {s}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* Mangler — røde pills */}
+            {job.missing_requirements.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {job.missing_requirements.map(r => (
+                  <span key={r} className="rounded bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 ring-1 ring-red-200">
+                    − {r}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Match breakdown bar */}
+        {/* Match breakdown — 5 søjler */}
         {job.match_score > 0 && (
-          <div className="mt-3 grid grid-cols-4 gap-1">
-            {Object.entries(job.match_breakdown).map(([key, val]) => {
-              const labels: Record<string, string> = {
-                skills: "Kompetencer", experience: "Erfaring",
-                preferences: "Præferencer", certifications: "Certifikater",
-              };
-              return (
-                <div key={key}>
-                  <div className="mb-1 text-xs text-slate-400">{labels[key]}</div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-blue-500 transition-all"
-                      style={{ width: `${Math.min(100, val)}%` }}
-                    />
-                  </div>
+          <div className="mt-3 grid grid-cols-5 gap-1">
+            {Object.entries(job.match_breakdown).map(([key, val]) => (
+              <div key={key}>
+                <div className="mb-1 text-xs text-slate-400 truncate">{BREAKDOWN_LABELS[key] ?? key}</div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all"
+                    style={{ width: `${Math.min(100, val)}%` }}
+                  />
                 </div>
-              );
-            })}
+                <div className="mt-0.5 text-xs text-slate-400">{Math.round(val)}%</div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Expandable description */}
-      {job.description && (
+      {/* Udvidbar beskrivelse */}
+      {displayText && (
         <div className="border-t border-slate-100 px-5 py-3">
           <button
             onClick={() => setExpanded(v => !v)}
             className="flex w-full items-center justify-between text-xs font-medium text-slate-500 hover:text-slate-700"
           >
-            <span>Beskrivelse</span>
+            <span>{isScraped ? "Fuldt jobopslag" : "Beskrivelse (teaser)"}</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
               className={`transition-transform ${expanded ? "rotate-180" : ""}`}>
               <polyline points="6 9 12 15 18 9"/>
             </svg>
           </button>
           {expanded && (
-            <p className="mt-2 whitespace-pre-line text-xs leading-relaxed text-slate-600">
-              {job.description.slice(0, 1000)}{job.description.length > 1000 ? "…" : ""}
-            </p>
+            <div className="mt-2 max-h-80 overflow-y-auto rounded-lg bg-slate-50 p-3">
+              <p className="whitespace-pre-line text-xs leading-relaxed text-slate-600">
+                {displayText.slice(0, 4000)}{displayText.length > 4000 ? "\n\n[Vis resten via jobopslaget →]" : ""}
+              </p>
+            </div>
           )}
         </div>
       )}
 
-      {/* Actions */}
+      {/* Krav-pills (fra AI-berigelse) */}
+      {job.requirements.length > 0 && !expanded && (
+        <div className="border-t border-slate-100 px-5 pb-3 pt-2">
+          <div className="flex flex-wrap gap-1">
+            {job.requirements.slice(0, 6).map(r => (
+              <span key={r} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">{r}</span>
+            ))}
+            {job.requirements.length > 6 && (
+              <span className="text-xs text-slate-400">+{job.requirements.length - 6}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Handlinger */}
       <div className="flex items-center gap-2 border-t border-slate-100 px-5 py-3">
         {job.url && (
           <a
@@ -244,7 +292,6 @@ export default function JobDiscoveryPage() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [history, setHistory] = useState<SearchHistory[]>([]);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [savedJobMap, setSavedJobMap] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -279,9 +326,8 @@ export default function JobDiscoveryPage() {
         ai_enrichment: true,
       });
       setResult(data);
-      // Refresh history
       apiGet<SearchHistory[]>("/job-discovery/history").then(setHistory).catch(() => {});
-    } catch (err) {
+    } catch {
       showToast("Søgning fejlede — prøv igen");
     } finally {
       setSearching(false);
@@ -290,10 +336,9 @@ export default function JobDiscoveryPage() {
 
   async function handleSave(job: DiscoveredJob) {
     try {
-      const saved = await apiPost<{ id: string }>("/job-discovery/save", { result: job });
+      await apiPost<{ id: string }>("/job-discovery/save", { result: job });
       const key = job.external_id ?? `${job.title}|${job.company}`;
       setSavedIds(prev => new Set([...prev, key]));
-      setSavedJobMap(prev => ({ ...prev, [key]: saved.id }));
       showToast(`"${job.title}" gemt i Jobs`);
     } catch {
       showToast("Kunne ikke gemme jobbet");
@@ -322,11 +367,11 @@ export default function JobDiscoveryPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Ledige Jobs</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Søg på tværs af Jobnet, Jobindex og Ofir — matchet mod din karriereprofil
+          Søg på tværs af Jobnet, Jobindex og Ofir — med fuld jobtekst-scraping og AI-matchscore
         </p>
       </div>
 
-      {/* Search form */}
+      {/* Søgeformular */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <form onSubmit={handleSearch} className="space-y-4">
           <div className="flex gap-3">
@@ -338,7 +383,7 @@ export default function JobDiscoveryPage() {
               <input
                 ref={inputRef}
                 className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="Stillingstitel — fx Facility Manager, Software Developer…"
+                placeholder="Stillingstitel — fx Teamleder, Facility Manager, Indkøbschef…"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 required
@@ -361,13 +406,13 @@ export default function JobDiscoveryPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
-                  Søger…
+                  Søger + scraper…
                 </>
               ) : "Søg jobs"}
             </button>
           </div>
 
-          {/* Source selector */}
+          {/* Kildevælger */}
           {sources.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-slate-500">Kilder:</span>
@@ -390,7 +435,7 @@ export default function JobDiscoveryPage() {
         </form>
       </div>
 
-      {/* Search history — shown before results */}
+      {/* Søgehistorik */}
       {!result && history.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">Seneste søgninger</h2>
@@ -418,12 +463,17 @@ export default function JobDiscoveryPage() {
         </div>
       )}
 
-      {/* Source stats */}
+      {/* Stats-linje */}
       {result && (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-slate-700">
             {result.total} job{result.total !== 1 ? "s" : ""} fundet
           </span>
+          {result.scraped_count > 0 && (
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+              {result.scraped_count} med fuld tekst
+            </span>
+          )}
           <span className="text-slate-300">|</span>
           {Object.entries(result.source_stats).map(([src, count]) => (
             <span key={src} className={`rounded-full px-2.5 py-1 text-xs font-medium ${SOURCE_COLORS[src] ?? "bg-slate-100 text-slate-600"}`}>
@@ -433,7 +483,7 @@ export default function JobDiscoveryPage() {
         </div>
       )}
 
-      {/* Results */}
+      {/* Ingen resultater */}
       {result && result.results.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-16 text-center">
           <p className="text-3xl">🔍</p>
@@ -444,48 +494,36 @@ export default function JobDiscoveryPage() {
         </div>
       )}
 
-      {/* High match results */}
+      {/* Godt match (≥50%) */}
       {topResults.length > 0 && (
         <div className="space-y-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-xs text-white">✓</span>
-            Godt match ({topResults.length})
+            Godt match — {topResults.length} job{topResults.length !== 1 ? "s" : ""}
           </h2>
           <div className="grid gap-4 lg:grid-cols-2">
             {topResults.map((job, i) => (
-              <JobCard
-                key={`top-${i}`}
-                job={job}
-                onSave={handleSave}
-                onGenerateApplication={() => {}}
-                savedIds={savedIds}
-              />
+              <JobCard key={`top-${i}`} job={job} onSave={handleSave} savedIds={savedIds} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Other results */}
+      {/* Andre resultater (<50%) */}
       {otherResults.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-500">
-            Andre resultater ({otherResults.length})
+            Andre resultater — {otherResults.length} job{otherResults.length !== 1 ? "s" : ""}
           </h2>
           <div className="grid gap-4 lg:grid-cols-2">
             {otherResults.map((job, i) => (
-              <JobCard
-                key={`other-${i}`}
-                job={job}
-                onSave={handleSave}
-                onGenerateApplication={() => {}}
-                savedIds={savedIds}
-              />
+              <JobCard key={`other-${i}`} job={job} onSave={handleSave} savedIds={savedIds} />
             ))}
           </div>
         </div>
       )}
 
-      {/* Empty state — no search yet */}
+      {/* Empty state — ingen søgning endnu */}
       {!result && !searching && history.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 py-20 text-center">
           <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mb-4 text-slate-300">
@@ -493,9 +531,13 @@ export default function JobDiscoveryPage() {
           </svg>
           <p className="text-lg font-semibold text-slate-600">Søg efter ledige stillinger</p>
           <p className="mt-2 max-w-xs text-sm text-slate-400">
-            Skriv en stillingstitel og CareerOS søger på Jobnet, Jobindex og Ofir
-            — og matcher resultaterne mod din karriereprofil.
+            CareerOS søger på Jobnet, Jobindex og Ofir, scraper fuld jobtekst
+            og matcher mod din karriereprofil med forklaret matchscore.
           </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs text-slate-400">
+            <span className="rounded bg-green-50 px-2 py-0.5 text-green-700 ring-1 ring-green-200">✓ Kompetencer der matcher</span>
+            <span className="rounded bg-red-50 px-2 py-0.5 text-red-600 ring-1 ring-red-200">− Manglende krav</span>
+          </div>
         </div>
       )}
     </div>

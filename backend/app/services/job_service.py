@@ -19,8 +19,8 @@ def _match_term(term: str, job_text: str, job_tokens: set[str]) -> bool:
     2. Ordniveau         — hvert signifikant ord i term er substreng af mindst
                           ét jobord (dækker danske sammensætninger:
                           "ledelse" → "leder" er delstreng af "teamleder")
-    3. Stamme (5 tegn)   — term[:5] er præfiks af mindst ét jobord
-                          (dækker bøjninger: "procurement" → "procur" i "procurement")
+    3. Stamme 4/5 tegn  — "lede" er substreng af "teamleder";
+                          "budge" matcher "budgetansvarlig"
     """
     if not term:
         return False
@@ -33,14 +33,11 @@ def _match_term(term: str, job_text: str, job_tokens: set[str]) -> bool:
     words = [w for w in term.split() if len(w) > 2]
     if words:
         def word_in_job(w: str) -> bool:
-            # direkte match eller som delstreng i et jobord (f.eks. "leder" i "teamleder")
             return w in job_tokens or any(w in jt for jt in job_tokens if len(jt) > len(w))
         if all(word_in_job(w) for w in words):
             return True
 
     # 3. Stamme — håndterer bøjninger og danske sammensatte ord.
-    #    Bruger 4 tegn for lange ord (≥7 tegn) så "ledelse" → "lede" matcher "teamleder",
-    #    og 5 tegn for mellemlange ord så "budge" matcher "budgetansvarlig".
     for stem_len in (4, 5):
         if len(term) >= stem_len + 2:
             stem = term[:stem_len]
@@ -72,6 +69,11 @@ class JobService:
             "remote_type": data.get("remote_type", "hybrid"),
             "notes": data.get("notes"),
             "is_saved": data.get("is_saved", True),
+            # Fuld jobtekst fra scraping (None hvis ikke scraped)
+            "full_description":    data.get("full_description"),
+            "responsibilities":    data.get("responsibilities"),
+            "company_description": data.get("company_description"),
+            "scraped_at":          data.get("scraped_at"),
         }
         result = self.db.table("jobs").insert(payload).execute()
         return result.data[0]
@@ -139,6 +141,7 @@ class JobService:
             "title", "company", "location", "url", "description",
             "requirements", "salary_min", "salary_max", "job_type",
             "remote_type", "notes", "is_saved",
+            "full_description", "responsibilities", "company_description", "scraped_at",
         }
         payload = {k: v for k, v in data.items() if k in allowed}
         result = (
@@ -173,34 +176,41 @@ class JobService:
         """
         Multi-signal match scoring der afspejler den faktiske kandidatprofil.
 
-        Fem signaler med forskellig vægt:
+        Jobtekst-hierarki (bedst tilgængelige bruges):
+          full_description (scraped fuld side) > description (teaser/API) > title
 
-          Signal                  Vægt   Kilde
-          ─────────────────────── ────   ──────────────────────────────────
-          Kompetencer (skills)    35 %   cv_skills + target_title ord
-          Erfaring                25 %   cv_experiences titler (primær) +
-                                         beskrivelsesnøgleord (sekundær)
-          Profil-signal           20 %   target_title + master_cv summary
-          Præferencer             15 %   role_types + industries
-          Certifikater             5 %   cv_certifications
+        Fem signaler:
+          Kompetencer  35 %  cv_skills + target_title ord
+          Erfaring     25 %  erfaringstitler (60 %) + beskrivelsesord (40 %)
+          Profil        20 %  target_title match + summary fallback
+          Præferencer  15 %  role_types + industries
+          Certifikater  5 %  eksakt cert-match
 
-        Matchstrategi pr. term:
-          1. Eksakt substreng   — "facility management" i jobtekst
-          2. Ordniveau          — "ledelse" → "leder" delstreng i "teamleder"
-          3. Stamme 5 tegn      — "budgetansvar" → "budge" præfiks i "budget"
+        Returnerer også:
+          missing_requirements: jobkrav der IKKE er dækket af kandidatprofilen
+          matched_skills:       kandidatkompetencer fundet i jobtekst
+          text_chars_used:      antal tegn jobtekst der matchedes på
         """
         profile      = snapshot.get("profile", {})
         target_title = (profile.get("target_title") or "").lower()
         summary      = (profile.get("summary") or "").lower()
 
-        # Byg jobrepræsentation
+        # ── Byg jobrepræsentation — brug fuld beskrivelse når tilgængelig ────
         job_title = (job.get("title") or "").lower()
+        # full_description har prioritet over description (teaser)
+        full_desc = job.get("full_description") or ""
+        teaser    = job.get("description") or ""
+        best_desc = full_desc if len(full_desc) > len(teaser) else teaser
+
         job_text = " ".join(filter(None, [
             job_title,
-            job.get("description") or "",
+            best_desc,
             *job.get("requirements", []),
+            job.get("responsibilities") or "",
+            job.get("company_description") or "",
         ])).lower()
         job_tokens: set[str] = set(_tokenise(job_text))
+        text_chars_used = len(job_text)
 
         skills_data  = snapshot.get("skills", [])
         exp_data     = snapshot.get("experience", [])
@@ -211,7 +221,6 @@ class JobService:
         cert_names   = [c.get("name", "").lower() for c in certs_data  if c.get("name")]
 
         # ── 1. Kompetencer (35 %) ─────────────────────────────────────────────
-        # Udvid med target_title-ord som pseudo-kompetencer
         extended_skills = list(dict.fromkeys(
             skill_names
             + [w for w in target_title.split() if len(w) > 3]
@@ -224,7 +233,6 @@ class JobService:
         )
 
         # ── 2. Erfaring (25 %) ───────────────────────────────────────────────
-        # 2a. Titelmatch (6 af 10 point): erfaringstitler mod jobtitel + krav
         exp_title_hits = 0
         n_exp = min(len(exp_data), 8)
         for exp in exp_data[:8]:
@@ -234,7 +242,6 @@ class JobService:
 
         exp_title_score = min(100.0, exp_title_hits / max(n_exp, 1) * 100 * 2.0) if n_exp else 0.0
 
-        # 2b. Beskrivelsesnøgleord (4 af 10 point)
         exp_desc_tokens: set[str] = set()
         for exp in exp_data[:5]:
             desc = (exp.get("description") or "") + " " + " ".join(exp.get("achievements", []) or [])
@@ -244,21 +251,17 @@ class JobService:
 
         exp_desc_hits  = sum(1 for t in exp_desc_tokens if _match_term(t, job_text, job_tokens))
         exp_desc_score = min(100.0, exp_desc_hits * 2.5)
-
         exp_score = min(100.0, exp_title_score * 0.60 + exp_desc_score * 0.40)
 
         # ── 3. Profil-signal (20 %) ──────────────────────────────────────────
-        # target_title ord mod jobtitel (stærkt signal)
         target_words = [w for w in _tokenise(target_title) if len(w) > 3]
         target_hits  = sum(1 for w in target_words if _match_term(w, job_text, job_tokens))
         target_score = min(100.0, target_hits / max(len(target_words), 1) * 100 * 1.5) if target_words else 0.0
 
-        # summary-termer mod jobtekst (fallback for ufuldstændig profil)
         summary_tokens = {w for w in _tokenise(summary) if len(w) > 6}
         summary_hits   = sum(1 for t in summary_tokens if _match_term(t, job_text, job_tokens))
         summary_score  = min(100.0, summary_hits * 2.0)
-
-        profile_score = min(100.0, target_score * 0.70 + summary_score * 0.30)
+        profile_score  = min(100.0, target_score * 0.70 + summary_score * 0.30)
 
         # ── 4. Præferencer (15 %) ────────────────────────────────────────────
         role_types = [r.lower() for r in prefs.get("role_types", [])]
@@ -274,13 +277,32 @@ class JobService:
         cert_score    = min(100.0, len(matched_certs) * 34.0)
 
         total = round(
-            skill_score   * 0.35
-            + exp_score   * 0.25
+            skill_score     * 0.35
+            + exp_score     * 0.25
             + profile_score * 0.20
-            + pref_score  * 0.15
-            + cert_score  * 0.05,
+            + pref_score    * 0.15
+            + cert_score    * 0.05,
             1,
         )
+
+        # ── Manglende krav — jobkrav IKKE dækket af kandidatprofil ───────────
+        candidate_text = " ".join(filter(None, [
+            target_title, summary,
+            *skill_names,
+            *[e.get("title", "") for e in exp_data[:6]],
+            *[(e.get("description") or "")[:300] for e in exp_data[:4]],
+        ])).lower()
+        candidate_tokens = set(_tokenise(candidate_text))
+
+        job_requirements = job.get("requirements", [])
+        missing_requirements: list[str] = []
+        for req in job_requirements[:12]:
+            req_s = req.strip()
+            if len(req_s) < 3:
+                continue
+            if not _match_term(req_s.lower(), candidate_text, candidate_tokens):
+                missing_requirements.append(req_s)
+        missing_requirements = missing_requirements[:5]
 
         return {
             "total": total,
@@ -291,8 +313,10 @@ class JobService:
                 "preferences":    round(pref_score, 1),
                 "certifications": round(cert_score, 1),
             },
-            "matched_skills": matched_skills[:10],
-            "matched_certs":  matched_certs[:3],
+            "matched_skills":       matched_skills[:10],
+            "matched_certs":        matched_certs[:3],
+            "missing_requirements": missing_requirements,
+            "text_chars_used":      text_chars_used,
         }
 
     def store_match_score(self, job_id: str, score: float) -> None:

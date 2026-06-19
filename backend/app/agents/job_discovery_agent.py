@@ -41,12 +41,19 @@ class JobDiscoveryAgent(BaseAgent):
         if not results:
             return AgentResult(content="[]", metadata={"enriched": 0})
 
-        # Only enrich the top 10 results to keep token use low
-        to_enrich = results[:10]
+        # Enrich top 15 — bruger fuld beskrivelse når tilgængelig
+        to_enrich = results[:15]
 
         jobs_json = json.dumps(
-            [{"title": r["title"], "company": r["company"], "description": (r.get("description") or "")[:500]}
-             for r in to_enrich],
+            [
+                {
+                    "title": r["title"],
+                    "company": r["company"],
+                    # full_description foretrækkes (scraped); fallback til teaser
+                    "description": (r.get("full_description") or r.get("description") or "")[:1500],
+                }
+                for r in to_enrich
+            ],
             ensure_ascii=False,
         )
 
