@@ -65,6 +65,13 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
     if title:
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(0, 6, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
+    if contact_parts:
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(80, 80, 80)
+        pdf.cell(0, 5, "  |  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
 
     def section(label: str) -> None:
@@ -141,7 +148,7 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
     pdf.set_y(-13)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(120, 120, 120)
-    pdf.cell(0, 5, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -209,6 +216,12 @@ def cv_pdf_modern(cv_data: dict) -> bytes:
     if title_str:
         sb_cell(title_str, "", 9, ACC, 5)
     y += 3
+
+    contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
+    if contact_parts:
+        sb_section("Contact")
+        for c in contact_parts:
+            sb_cell(c, "", 8, WHT, 4.5)
 
     skills = cv_data.get("skills") or []
     if skills:
@@ -307,7 +320,7 @@ def cv_pdf_modern(cv_data: dict) -> bytes:
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*GRY)
     pdf.set_x(MAIN_X)
-    pdf.cell(MAIN_W, 5, f"CareerOS  |  {_today()}", align="R")
+    pdf.cell(MAIN_W, 5, _today(), align="R")
 
     return bytes(pdf.output())
 
@@ -342,6 +355,12 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
         pdf.set_font("Times", "I", 12)
         pdf.set_text_color(*GREY)
         pdf.cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+
+    contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
+    if contact_parts:
+        pdf.set_font("Times", "", 9)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     # Gold double rule
     pdf.ln(3)
@@ -450,7 +469,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
     pdf.ln(2)
     pdf.set_font("Times", "I", 8)
     pdf.set_text_color(*GREY)
-    pdf.cell(0, 5, f"CareerOS  ·  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -485,6 +504,12 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(*MED)
         pdf.cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
+    if contact_parts:
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*LGT)
+        pdf.cell(0, 5, "   ·   ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.ln(3)
     pdf.set_draw_color(*LGT)
@@ -590,7 +615,7 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
     pdf.ln(2)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*LGT)
-    pdf.cell(0, 4, f"CareerOS  ·  {_today()}", align="C")
+    pdf.cell(0, 4, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -642,6 +667,13 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
     # Body starts below header
     pdf.set_margins(18, 0, 18)
     pdf.set_y(HEADER_H + 8)
+
+    contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
+    if contact_parts:
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(*GRY)
+        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
 
     def section(label: str) -> None:
         pdf.ln(4)
@@ -755,7 +787,7 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
     pdf.set_y(-12)
     pdf.set_font("Helvetica", "", 7)
     pdf.set_text_color(*GRY)
-    pdf.cell(0, 5, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
