@@ -36,10 +36,18 @@ jobs:
     steps:
       - name: Trigger Render deploy hook
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "ERROR: RENDER_DEPLOY_HOOK_URL secret is not set"
+            exit 1
+          fi
+          HTTP=$(curl -s -o /tmp/render_response.txt -w "%{http_code}" \
             --retry 3 --retry-delay 5 \
-            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" | \
-          grep -q "^2" || (echo "Render deploy hook failed" && exit 1)
+            "$RENDER_DEPLOY_HOOK_URL")
+          echo "Render hook response: HTTP $HTTP"
+          cat /tmp/render_response.txt || true
+          echo "$HTTP" | grep -q "^2" || (echo "Render deploy hook failed (HTTP $HTTP)" && exit 1)
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
 
       - name: Wait for Render health check
         run: |
