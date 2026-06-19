@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { apiPost, apiGet, apiStream } from "@/lib/api";
-// apiStream only used for sendMessage — welcome uses static message to avoid cold-start hangs
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CompletenessScore } from "@/components/CompletenessScore";
@@ -28,6 +28,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   streaming?: boolean;
+  hidden?: boolean;
 }
 
 const STATIC_WELCOME: ChatMessage = {
@@ -37,6 +38,7 @@ const STATIC_WELCOME: ChatMessage = {
 };
 
 export default function InterviewPage() {
+  const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null);
@@ -46,6 +48,7 @@ export default function InterviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [scoreRefresh, setScoreRefresh] = useState(0);
   const [coldStartWait, setColdStartWait] = useState(false);
+  const [interviewComplete, setInterviewComplete] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -62,7 +65,6 @@ export default function InterviewPage() {
     setLoading(true);
     setError(null);
 
-    // Show cold-start hint after 5 seconds of waiting
     const coldTimer = setTimeout(() => setColdStartWait(true), 5000);
 
     try {
@@ -70,17 +72,20 @@ export default function InterviewPage() {
       setSessionId(result.session_id);
 
       if (result.status === "resumed" && result.messages.length > 0) {
-        setMessages(result.messages.map((m) => ({ role: m.role, content: m.content })));
+        // Filter hidden messages (welcome trigger) from display
+        const visible = result.messages
+          .filter((m) => !(m.role === "user" && m.content.startsWith("Start interviewet")))
+          .map((m) => ({ role: m.role, content: m.content }));
+        setMessages(visible.length > 0 ? visible : [STATIC_WELCOME]);
       } else if (result.status === "resumed") {
         try {
           const hist = await apiGet<{ messages: Array<{ role: "user" | "assistant"; content: string }> }>(
             `/discovery/${result.session_id}/messages`
           );
-          if (hist.messages.length > 0) {
-            setMessages(hist.messages.map((m) => ({ role: m.role, content: m.content })));
-          } else {
-            setMessages([STATIC_WELCOME]);
-          }
+          const visible = (hist.messages || []).filter(
+            (m) => !(m.role === "user" && m.content.startsWith("Start interviewet"))
+          );
+          setMessages(visible.length > 0 ? visible : [STATIC_WELCOME]);
         } catch {
           setMessages([STATIC_WELCOME]);
         }
@@ -103,6 +108,9 @@ export default function InterviewPage() {
     try {
       const status = await apiGet<SessionStatus>(`/discovery/${sid}`);
       setSessionStatus(status);
+      if (status.profile_complete) {
+        setInterviewComplete(true);
+      }
     } catch {
       // Status er non-critical
     }
@@ -137,13 +145,21 @@ export default function InterviewPage() {
             )
           );
         },
-        () => {
+        (payload) => {
+          // Rens sentinel fra display og stop streaming-indikator
           setMessages((prev) =>
-            prev.map((m, i) =>
-              i === prev.length - 1 ? { ...m, streaming: false } : m
-            )
+            prev.map((m, i) => {
+              if (i !== prev.length - 1) return m;
+              return {
+                ...m,
+                streaming: false,
+                content: m.content.replace("[INTERVIEW_COMPLETE]", "").trim(),
+              };
+            })
           );
-          // Refresh score og status efter hvert svar
+          if (payload?.interview_complete) {
+            setInterviewComplete(true);
+          }
           setScoreRefresh((n) => n + 1);
           loadStatus(sessionId);
         },
@@ -249,7 +265,6 @@ export default function InterviewPage() {
                       msg.role === "user" ? "flex-row-reverse" : "flex-row"
                     )}
                   >
-                    {/* Avatar */}
                     <div
                       className={cn(
                         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
@@ -261,7 +276,6 @@ export default function InterviewPage() {
                       {msg.role === "assistant" ? "AI" : "Dig"}
                     </div>
 
-                    {/* Bubble */}
                     <div
                       className={cn(
                         "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
@@ -313,31 +327,50 @@ export default function InterviewPage() {
               </div>
             )}
 
-            {/* Input */}
-            <div className="mt-3 flex gap-2">
-              <Textarea
-                ref={textareaRef}
-                rows={3}
-                placeholder="Skriv dit svar… (Enter sender, Shift+Enter = ny linje)"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={sending}
-                className="flex-1"
-              />
-              <Button
-                onClick={sendMessage}
-                disabled={!input.trim() || sending}
-                loading={sending}
-                className="self-end px-5"
-              >
-                Send
-              </Button>
-            </div>
+            {/* Interview complete CTA */}
+            {interviewComplete ? (
+              <div className="mt-3 rounded-xl border border-green-200 bg-green-50 p-4">
+                <p className="mb-3 text-sm font-semibold text-green-800">
+                  Interview afsluttet — din profil er opdateret!
+                </p>
+                <p className="mb-4 text-xs text-green-700">
+                  Alle svar er gemt og din Career Memory er opdateret. Generer nu dit opdaterede Master CV.
+                </p>
+                <Button
+                  onClick={() => router.push("/cv")}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  Generer Master CV
+                </Button>
+              </div>
+            ) : (
+              /* Input */
+              <div className="mt-3 flex gap-2">
+                <Textarea
+                  ref={textareaRef}
+                  rows={3}
+                  placeholder="Skriv dit svar… (Enter sender, Shift+Enter = ny linje)"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={sending}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={sendMessage}
+                  disabled={!input.trim() || sending}
+                  className="self-end px-5"
+                >
+                  {sending ? "…" : "Send"}
+                </Button>
+              </div>
+            )}
 
-            <p className="mt-1.5 text-center text-xs text-slate-400">
-              Dine svar gemmes og bruges til at opdatere din profil automatisk
-            </p>
+            {!interviewComplete && (
+              <p className="mt-1.5 text-center text-xs text-slate-400">
+                Dine svar gemmes og bruges til at opdatere din profil automatisk
+              </p>
+            )}
           </>
         )}
       </div>
@@ -345,7 +378,6 @@ export default function InterviewPage() {
       {/* Score sidebar */}
       <aside className="w-64 shrink-0">
         <div className="sticky top-0 space-y-4">
-          {/* Score */}
           <div className="rounded-xl border border-slate-200 bg-slate-900 p-4">
             <h2 className="mb-4 text-sm font-semibold text-slate-200">
               Profil fuldstændighed
@@ -353,12 +385,9 @@ export default function InterviewPage() {
             <CompletenessScore refreshKey={scoreRefresh} />
           </div>
 
-          {/* Session info */}
           {sessionStatus && (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
-              <h3 className="mb-3 text-xs font-semibold text-slate-700">
-                Session
-              </h3>
+              <h3 className="mb-3 text-xs font-semibold text-slate-700">Session</h3>
               <div className="space-y-2 text-xs text-slate-500">
                 <div className="flex justify-between">
                   <span>Beskeder</span>

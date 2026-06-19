@@ -2,9 +2,10 @@
 Discovery Service — AI-drevet karriere-interview.
 
 Flow:
-  1. start()          → Opret session + returnér første AI-velkomst
-  2. stream_message() → Async generator der streamer AI-svar token for token
-  3. extract_*()      → Ekstraher strukturerede facts og opdater profil (baggrund)
+  1. start()          → Opret/hent session
+  2. stream_welcome() → Streamer AI-velkomst (første gang)
+  3. stream_message() → Streamer AI-svar + ekstraherer facts i baggrunden
+  4. _extract_and_save() → Parser svar til strukturerede data, opdaterer profil
 """
 from __future__ import annotations
 
@@ -20,89 +21,65 @@ from app.services.experience_service import ExperienceService
 COACH_AGENT = "career_coach_agent"
 CV_AGENT = "cv_agent"
 
-DISCOVERY_SYSTEM_TEMPLATE = """Du er en erfaren karriererådgiver der hjælper {name} med at afdække sin fulde karriereprofil.
+# ─── System prompts ───────────────────────────────────────────────────────────
 
-HVAD VI VED FRA CV:
+# Bruges når kandidaten allerede har et CV uploadet (profil + gaps kendes).
+DISCOVERY_SYSTEM_TEMPLATE = """Du er en erfaren karriererådgiver der interviewer {name} for at afdække hans/hendes komplette karriereprofil.
+
+VIGTIG: Kandidaten har ALLEREDE modtaget en velkomst. Genhils IKKE. Svar direkte på det kandidaten har skrevet og fortsæt interviewet.
+
+HVAD VI ALLEREDE VED:
 {profile_summary}
 
-ÅBNE GAPS DER SKAL DÆKKES (prioriteret):
+GAPS DER SKAL DÆKKES (prioriteret højest-til-lavest):
 {gaps_text}
 
-REGLER:
-- Stil ét præcist, åbent spørgsmål ad gangen
-- Arbejd dig igennem gaps fra høj til lav prioritet
-- Grav dybere når du hører om præstationer: "Hvad var dit specifikke bidrag?", "Hvilke tal kan du sætte på?", "Hvad skete der efterfølgende?"
-- Kvantificér ALT: tal, procenter, tidsramme, teamstørrelse, budget
-- Anerkend svar positivt inden næste spørgsmål
-- Signalér tydeligt ved emne-skift: "Lad os nu tale om..."
-- Når alle gaps er dækket: "Vi har nu en stærk profil. Er du klar til at generere dit Master CV?"
+REGLER FOR INTERVIEWET:
+- Stil ÉT præcist, åbent spørgsmål ad gangen — aldrig to spørgsmål i samme svar
+- Anerkend svaret i 1 sætning inden næste spørgsmål ("Godt!", "Interessant, tak.")
+- Grav dybere ved vage svar: spørg om specifikke tal, tidsramme, teamstørrelse, budget
+- Kvantificér ALT: "Hvor mange? Hvilken periode? Hvad var resultatet i tal?"
+- Arbejd systematisk igennem gaps fra høj til lav prioritet
+- Signalér tydeligt ved emne-skift: "Lad os nu tale om dine projekter..."
+- Hold svar under 200 ord
 
-Du er coachende, nysgerrig og professionel. Tal dansk medmindre kandidaten skifter til engelsk."""
+ALDRIG: Generer et CV, en rapport eller en opsummering i chatten. Det sker automatisk bagefter.
 
-FRESH_START_SYSTEM = """Du er en erfaren karriererådgiver der hjælper en kandidat med at opbygge sin karriereprofil fra bunden.
+AFSLUTNING: Når alle gaps er tilstrækkeligt besvaret, afslut med præcis denne linje:
+[INTERVIEW_COMPLETE]
+Efterfulgt af en 2-3 sætnings positiv opsummering af interviewet.
 
-Du skal systematisk afdække:
-1. Nuværende og tidligere stillinger (titel, virksomhed, periode, ansvarsområder)
-2. Konkrete præstationer og resultater (med tal og procenter)
-3. Projekter (navn, rolle, teknologier, outcome)
-4. Systemer og teknologier der bruges dagligt
-5. Lederskabserfaring
+Tal dansk og vær coachende og nysgerrig."""
+
+# Bruges når kandidaten IKKE har uploadet CV (tom profil).
+FRESH_START_SYSTEM = """Du er en erfaren karriererådgiver der interviewer en kandidat for at bygge hans/hendes karriereprofil fra bunden.
+
+VIGTIG: Kandidaten har ALLEREDE modtaget en velkomst og er klar til at svare. Genhils IKKE. Gå direkte til kandidatens svar og fortsæt derfra.
+
+EMNER DER SKAL DÆKKES (i denne rækkefølge):
+1. Nuværende stilling (titel, virksomhed, primære ansvarsområder, team)
+2. Konkrete præstationer med tal (hvad skete? hvad var din rolle? hvad var resultatet?)
+3. Projekter (navn, din rolle, teknologier, outcome)
+4. Systemer og teknologier brugt dagligt
+5. Lederskabserfaring (teamstørrelse, direkte rapporterende, ansvarsscope)
 6. Uddannelse og certifikater
-7. Kompetencer (tekniske og bløde)
+7. Kompetencer og bløde egenskaber
 
-Regler:
-- Start med at hilse og spørge til nuværende stilling
-- Stil ét spørgsmål ad gangen
-- Grav dybere efter hvert svar
-- Kvantificér alt
-- Afslut med Master CV-forslag
+REGLER FOR INTERVIEWET:
+- Stil ÉT præcist, åbent spørgsmål ad gangen — aldrig to spørgsmål i samme svar
+- Anerkend svaret i 1 sætning inden næste spørgsmål
+- Grav dybere ved vage svar: spørg om specifikke tal, tidsramme, teamstørrelse, budget
+- Kvantificér ALT: "Hvor mange? Hvilken periode? Hvad var resultatet i tal?"
+- Signalér tydeligt ved emne-skift: "Lad os nu tale om dine projekter..."
+- Hold svar under 200 ord
 
-Tal dansk og coachende."""
+ALDRIG: Generer et CV, en rapport eller en opsummering i chatten. Det sker automatisk bagefter.
 
-GENERATE_CV_SYSTEM = """Du genererer et professionelt Master CV på dansk baseret på kandidatens komplette profil.
+AFSLUTNING: Når ALLE 7 emner er tilstrækkeligt afdækket, afslut med præcis denne linje:
+[INTERVIEW_COMPLETE]
+Efterfulgt af en 2-3 sætnings positiv opsummering af interviewet.
 
-FORMAT:
-[NAVN]
-[Titel] | [Lokation] | [Email] | [Telefon]
-[LinkedIn URL]
-
-── PROFIL ─────────────────────────────────────────────
-[3-4 sætninger der fanger essensen af kandidatens styrker og erfaring]
-
-── ERFARING ───────────────────────────────────────────
-[For hvert job, nyeste først:]
-[Jobtitel] — [Virksomhed], [Lokation]
-[Periode: MMM ÅÅÅÅ – MMM ÅÅÅÅ / nuværende]
-• [Præstation/ansvar med kvantificeret resultat]
-• [Præstation/ansvar]
-• [Teknologier brugt]
-
-── PROJEKTER ──────────────────────────────────────────
-[Kun hvis der er projekter:]
-[Projektnavn] | [Rolle]
-[Kort beskrivelse og outcome]
-Teknologier: [liste]
-
-── UDDANNELSE ─────────────────────────────────────────
-[Uddannelse] — [Institution]
-[Periode]
-
-── KOMPETENCER ────────────────────────────────────────
-Tekniske: [kommasepareret liste]
-Bløde: [kommasepareret liste]
-Sprog: [liste med niveau]
-
-── SYSTEMER & TEKNOLOGIER ─────────────────────────────
-[Kategoriseret liste: Cloud, CRM, ERP, DevOps, etc.]
-
-── LEDERSKAB ──────────────────────────────────────────
-[Kun hvis relevant:]
-[Tittel — scope og direkte rapporterende]
-
-── CERTIFIKATER ───────────────────────────────────────
-[Navn — Udbyder — År]
-
-Tone: Professionel, aktiv stemme, præcis. Undgå klichéer som "resultatorienteret" og "teamplayer"."""
+Tal dansk og vær coachende og nysgerrig."""
 
 
 class DiscoveryService:
@@ -114,7 +91,6 @@ class DiscoveryService:
 
     async def start(self, user_id: str, upload_id: str | None = None) -> dict:
         """Opret ny session (eller hent aktiv). Returnerer session_id + beskeder."""
-        # Tjek for eksisterende aktiv session
         existing = (
             self.db.table("discovery_sessions")
             .select("*")
@@ -132,7 +108,6 @@ class DiscoveryService:
                 "messages": session.get("messages") or [],
             }
 
-        # Opret ny session
         result = self.db.table("discovery_sessions").insert({
             "user_id": user_id,
             "cv_upload_id": upload_id,
@@ -151,13 +126,12 @@ class DiscoveryService:
         session_id: str,
         user_id: str,
     ) -> AsyncGenerator[str, None]:
-        """Stream AI's åbningsbesked. Gemmer KUN AI-svaret (ikke en user-besked)."""
+        """Stream AI's åbningsbesked. Gemmes i session som FØRSTE besked."""
         session = self.get_session(session_id, user_id)
         if not session:
             yield json.dumps({"type": "error", "content": "Session ikke fundet"})
             return
 
-        # Allerede har beskeder — ingen grund til ny velkomst
         if session.get("messages"):
             yield json.dumps({"type": "done"})
             return
@@ -165,18 +139,20 @@ class DiscoveryService:
         try:
             profile = self._build_profile_summary(user_id)
             gaps = self.exp_service.list_open_gaps(user_id)
-            if gaps or profile.get("has_content"):
-                system_prompt = self._build_system_prompt(profile, gaps)
-            else:
-                system_prompt = FRESH_START_SYSTEM
+            system_prompt = (
+                self._build_system_prompt(profile, gaps)
+                if (gaps or profile.get("has_content"))
+                else FRESH_START_SYSTEM
+            )
         except Exception as exc:
             yield json.dumps({"type": "error", "content": f"Fejl ved profilhentning: {exc}"})
             return
 
         WELCOME_TRIGGER = (
-            "Start interviewet med en varm, professionel velkomst. "
-            "Nævn kort 2-3 vigtige fund fra CV'et, og hvad du gerne vil afdække. "
-            "Stil ét konkret åbningsspørgsmål. Hold det under 150 ord."
+            "Start interviewet med en varm åbningsbesked. "
+            "Nævn 2-3 konkrete fund fra CV'et (erfaringer, gaps, projekter). "
+            "Stil ét konkret åbningsspørgsmål om den vigtigste manglende information. "
+            "Hold det under 120 ord."
         )
 
         messages = [
@@ -188,11 +164,7 @@ class DiscoveryService:
         try:
             llm = LiteLLMProvider(user_id)
             response = await llm.complete(
-                COACH_AGENT,
-                messages,
-                stream=True,
-                temperature=0.7,
-                max_tokens=400,
+                COACH_AGENT, messages, stream=True, temperature=0.7, max_tokens=400,
             )
             async for chunk in response:
                 delta = chunk.choices[0].delta.content or ""
@@ -203,11 +175,13 @@ class DiscoveryService:
             yield json.dumps({"type": "error", "content": f"AI fejl: {exc}"})
             return
 
-        # Gem KUN AI-svaret (velkomsten er ikke et svar på brugerens besked)
-        session_data = self.db.table("discovery_sessions").select("messages").eq("id", session_id).execute()
-        existing = session_data.data[0].get("messages") or []
-        existing.append({"role": "assistant", "content": full_response})
-        self.db.table("discovery_sessions").update({"messages": existing}).eq("id", session_id).execute()
+        # Gem som [user: trigger, assistant: response] for korrekt rolle-rækkefølge
+        self.db.table("discovery_sessions").update({
+            "messages": [
+                {"role": "user", "content": WELCOME_TRIGGER},
+                {"role": "assistant", "content": full_response},
+            ],
+        }).eq("id", session_id).execute()
 
         yield json.dumps({"type": "done"})
 
@@ -226,9 +200,9 @@ class DiscoveryService:
         messages = session.data[0].get("messages") or []
         messages.append({"role": "user", "content": user_message})
         messages.append({"role": "assistant", "content": ai_response})
-        # Behold max 40 beskeder (20 udvekslinger)
-        if len(messages) > 40:
-            messages = messages[-40:]
+        if len(messages) > 60:
+            # Behold altid de første 2 (trigger + velkomst) + nyeste 58
+            messages = messages[:2] + messages[-58:]
         self.db.table("discovery_sessions").update({"messages": messages}).eq("id", session_id).execute()
 
     # ─── Streaming chat ───────────────────────────────────────────────────────
@@ -239,8 +213,10 @@ class DiscoveryService:
         user_message: str,
         user_id: str,
     ) -> AsyncGenerator[str, None]:
-        """Async generator: streamer AI-svar token for token.
-        Gemmer udveksling og trigger faktaekstraktion i baggrunden.
+        """
+        Streamer AI-svar token for token.
+        Gemmer udveksling og ekstraher facts i baggrunden.
+        Emitter {"type": "done", "interview_complete": true} ved [INTERVIEW_COMPLETE].
         """
         session = self.get_session(session_id, user_id)
         if not session:
@@ -250,18 +226,30 @@ class DiscoveryService:
         try:
             profile = self._build_profile_summary(user_id)
             gaps = self.exp_service.list_open_gaps(user_id)
-            if gaps or profile.get("has_content"):
-                system_prompt = self._build_system_prompt(profile, gaps)
-            else:
-                system_prompt = FRESH_START_SYSTEM
+            system_prompt = (
+                self._build_system_prompt(profile, gaps)
+                if (gaps or profile.get("has_content"))
+                else FRESH_START_SYSTEM
+            )
         except Exception as exc:
             yield json.dumps({"type": "error", "content": f"Fejl ved profilhentning: {exc}"})
             return
 
         prior_messages = session.get("messages") or []
+
+        # Byg samtalehistorik — behold max 30 seneste beskeder for kontekst
+        history = [
+            {"role": m["role"], "content": m["content"]}
+            for m in prior_messages[-30:]
+        ]
+        # Anthropic kræver at samtalen starter med 'user'. Hvis historik starter
+        # med 'assistant' (fx kun velkomst gemt), indsæt neutral user-besked.
+        if history and history[0]["role"] == "assistant":
+            history = [{"role": "user", "content": "[SESSION_START]"}] + history
+
         messages = [
             {"role": "system", "content": system_prompt},
-            *[{"role": m["role"], "content": m["content"]} for m in prior_messages[-30:]],
+            *history,
             {"role": "user", "content": user_message},
         ]
 
@@ -269,11 +257,7 @@ class DiscoveryService:
         try:
             llm = LiteLLMProvider(user_id)
             response = await llm.complete(
-                COACH_AGENT,
-                messages,
-                stream=True,
-                temperature=0.7,
-                max_tokens=1024,
+                COACH_AGENT, messages, stream=True, temperature=0.7, max_tokens=600,
             )
             async for chunk in response:
                 delta = chunk.choices[0].delta.content or ""
@@ -284,16 +268,35 @@ class DiscoveryService:
             yield json.dumps({"type": "error", "content": f"AI fejl: {exc}"})
             return
 
-        # Gem udveksling synkront (ikke blocking for client)
-        self.save_exchange(session_id, user_message, full_response)
+        # Detektér interviewafslutning
+        interview_done = "[INTERVIEW_COMPLETE]" in full_response
+        clean_response = full_response.replace("[INTERVIEW_COMPLETE]", "").strip()
 
-        # Ekstraher facts i baggrunden
+        # Gem altid den rensede version i DB
+        self.save_exchange(session_id, user_message, clean_response)
+
+        if interview_done:
+            # Marker session som completed
+            self.db.table("discovery_sessions").update(
+                {"status": "completed", "profile_complete": True}
+            ).eq("id", session_id).execute()
+
+        # Ekstraher facts i baggrunden (uanset om interview er done)
         gap_descriptions = [g["description"] for g in gaps]
-        asyncio.create_task(
-            self._extract_and_save(session_id, user_id, user_message, full_response, gap_descriptions)
-        )
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(
+                self._extract_and_save(
+                    session_id, user_id, user_message, clean_response, gap_descriptions
+                )
+            )
+        except RuntimeError:
+            pass  # Ingen event loop — ignorer
 
-        yield json.dumps({"type": "done"})
+        if interview_done:
+            yield json.dumps({"type": "done", "interview_complete": True})
+        else:
+            yield json.dumps({"type": "done"})
 
     # ─── Fakta-ekstraktion ────────────────────────────────────────────────────
 
@@ -305,7 +308,7 @@ class DiscoveryService:
         ai_response: str,
         open_gap_descriptions: list[str],
     ) -> None:
-        """Baggrunds-task: Ekstraher facts og opdater profil."""
+        """Baggrunds-task: parser én udveksling → opdater profil-tabeller."""
         try:
             from app.agents.cv_agent import CVAgent
             from app.core.deps import get_supabase_admin
@@ -316,47 +319,66 @@ class DiscoveryService:
             if not facts:
                 return
 
-            # Opdater profil-tabeller
+            svc = self.exp_service
+
             if facts.get("achievements"):
-                self.exp_service.add_achievements_from_discovery(user_id, facts["achievements"])
+                svc.add_achievements_from_discovery(user_id, facts["achievements"])
+
             if facts.get("projects"):
-                self.exp_service.add_projects_from_discovery(user_id, facts["projects"])
+                svc.add_projects_from_discovery(user_id, facts["projects"])
+
             if facts.get("systems"):
-                self.exp_service.add_systems_from_discovery(user_id, facts["systems"])
+                svc.add_systems_from_discovery(user_id, facts["systems"])
+
             if facts.get("skills"):
-                self.exp_service.add_skills_from_discovery(user_id, facts["skills"])
+                svc.add_skills_from_discovery(user_id, facts["skills"])
+
             if facts.get("leadership"):
-                self.exp_service.add_leadership_from_discovery(user_id, facts["leadership"])
+                svc.add_leadership_from_discovery(user_id, facts["leadership"])
+
+            if facts.get("certifications"):
+                svc.add_certifications_from_discovery(user_id, facts["certifications"])
+
+            if facts.get("experience_additions"):
+                svc.apply_experience_additions(user_id, facts["experience_additions"])
 
             # Marker løste gaps
             if facts.get("gaps_resolved"):
-                all_gaps = self.exp_service.list_open_gaps(user_id)
+                all_gaps = svc.list_open_gaps(user_id)
                 for resolved_desc in facts["gaps_resolved"]:
                     for gap in all_gaps:
                         if resolved_desc.lower() in gap["description"].lower():
-                            self.exp_service.resolve_gap(gap["id"])
+                            svc.resolve_gap(gap["id"])
                             self._increment_gaps_resolved(session_id)
 
-            # Recalculate completeness score efter profil-opdatering
+            # Genberegn profilscore
             try:
                 from app.services.profile_completeness_service import ProfileCompletenessService
-                await ProfileCompletenessService().calculate_and_save(user_id, self.db)
+                await ProfileCompletenessService().calculate_and_save(user_id, get_supabase_admin())
             except Exception:
                 pass
 
         except Exception:
-            pass  # Baggrunds-ekstraktion fejler stilstående
+            pass  # Baggrunds-ekstraktion fejler stille
 
     def _increment_gaps_resolved(self, session_id: str) -> None:
-        session = self.db.table("discovery_sessions").select("gaps_resolved").eq("id", session_id).execute()
+        session = (
+            self.db.table("discovery_sessions")
+            .select("gaps_resolved")
+            .eq("id", session_id)
+            .execute()
+        )
         current = session.data[0]["gaps_resolved"] if session.data else 0
-        self.db.table("discovery_sessions").update({"gaps_resolved": current + 1}).eq("id", session_id).execute()
+        self.db.table("discovery_sessions").update(
+            {"gaps_resolved": current + 1}
+        ).eq("id", session_id).execute()
 
     # ─── Master CV generering ─────────────────────────────────────────────────
 
     async def generate_master_cv(self, user_id: str) -> AsyncGenerator[str, None]:
-        """Streamer et komplet Master CV baseret på kandidatens profil."""
+        """Streamer et komplet Master CV baseret på kandidatens samlede profil."""
         from app.services.cv_service import CVService
+
         cv_service = CVService(self.db)
         profile = await cv_service.get_full_profile(user_id)
 
@@ -365,27 +387,61 @@ class DiscoveryService:
             return
 
         profile_text = self._profile_to_text(profile)
+
+        GENERATE_CV_SYSTEM = """Du genererer et professionelt Master CV på dansk baseret på kandidatens komplette profil.
+
+FORMAT:
+[NAVN]
+[Titel] | [Lokation] | [Email] | [Telefon]
+
+── PROFIL ────────────────────────────────────────────────────
+[3-4 sætninger der fanger essensen af kandidatens styrker]
+
+── ERFARING ──────────────────────────────────────────────────
+[For hvert job, nyeste først:]
+[Jobtitel] — [Virksomhed], [Lokation]
+[Periode: MMM ÅÅÅÅ – MMM ÅÅÅÅ / nuværende]
+• [Præstation med kvantificeret resultat]
+• [Præstation]
+• [Teknologier brugt]
+
+── PROJEKTER ─────────────────────────────────────────────────
+[Kun hvis der er projekter]
+[Projektnavn] | [Rolle]
+[Kort beskrivelse og outcome]
+Teknologier: [liste]
+
+── UDDANNELSE ────────────────────────────────────────────────
+[Uddannelse] — [Institution] ([Periode])
+
+── KOMPETENCER ───────────────────────────────────────────────
+Tekniske: [kommasepareret liste]
+Bløde: [kommasepareret liste]
+Sprog: [liste med niveau]
+
+── CERTIFIKATER ──────────────────────────────────────────────
+[Navn — Udbyder — År]
+
+── LEDERSKAB ─────────────────────────────────────────────────
+[Kun hvis relevant]
+[Titel — scope og direkte rapporterende]
+
+Tone: Professionel, aktiv stemme, præcis. Ingen klichéer."""
+
         messages = [
             {"role": "system", "content": GENERATE_CV_SYSTEM},
-            {"role": "user", "content": f"Generer Master CV for denne kandidat:\n\n{profile_text}"},
+            {"role": "user", "content": f"Generer Master CV:\n\n{profile_text}"},
         ]
 
         full_cv = ""
         llm = LiteLLMProvider(user_id)
-        response = await llm.complete(
-            CV_AGENT,
-            messages,
-            stream=True,
-            temperature=0.4,
-            max_tokens=3000,
-        )
+        response = await llm.complete(CV_AGENT, messages, stream=True, temperature=0.4, max_tokens=3000)
         async for chunk in response:
             delta = chunk.choices[0].delta.content or ""
             if delta:
                 full_cv += delta
                 yield json.dumps({"type": "chunk", "content": delta})
 
-        # Gem det genererede CV
         await cv_service.save_master_cv_content(user_id, full_cv)
         yield json.dumps({"type": "done"})
 
@@ -398,11 +454,29 @@ class DiscoveryService:
         mcv = mcv_result.data[0]
         mcv_id = mcv["id"]
 
-        exps = self.db.table("cv_experiences").select("title, company, period_start, period_end").eq("master_cv_id", mcv_id).order("period_start", desc=True).execute().data
-        # Fetch as dicts (not just names) — ProfileCompletenessService.calculate() calls
-        # s.get("category") and p.get("outcomes") on these, which crashes on bare strings.
-        skills = self.db.table("cv_skills").select("name, category, level").eq("master_cv_id", mcv_id).limit(10).execute().data
-        projs = self.db.table("cv_projects").select("name, technologies, outcomes").eq("master_cv_id", mcv_id).execute().data
+        exps = (
+            self.db.table("cv_experiences")
+            .select("title, company, period_start, period_end")
+            .eq("master_cv_id", mcv_id)
+            .order("period_start", desc=True)
+            .execute()
+            .data
+        )
+        skills = (
+            self.db.table("cv_skills")
+            .select("name, category, level")
+            .eq("master_cv_id", mcv_id)
+            .limit(10)
+            .execute()
+            .data
+        )
+        projs = (
+            self.db.table("cv_projects")
+            .select("name, technologies, outcomes")
+            .eq("master_cv_id", mcv_id)
+            .execute()
+            .data
+        )
 
         return {
             "has_content": bool(exps),
@@ -410,8 +484,8 @@ class DiscoveryService:
             "target_title": mcv.get("target_title"),
             "summary": mcv.get("summary"),
             "experiences": exps,
-            "skills": skills,   # list of dicts: {name, category, level}
-            "projects": projs,  # list of dicts: {name, technologies, outcomes}
+            "skills": skills,
+            "projects": projs,
         }
 
     @staticmethod
@@ -425,13 +499,11 @@ class DiscoveryService:
         name = profile.get("target_title") or "kandidaten"
         exps = profile.get("experiences") or []
         exp_lines = "\n".join(
-            f"  • {e.get('title')} @ {e.get('company')}"
-            for e in exps[:5]
+            f"  • {e.get('title')} @ {e.get('company')}" for e in exps[:5]
         )
         skills = profile.get("skills") or []
         skills_str = ", ".join(
-            s if isinstance(s, str) else s.get("name", "")
-            for s in skills[:10]
+            s if isinstance(s, str) else s.get("name", "") for s in skills[:10]
         )
 
         profile_summary = (
@@ -442,14 +514,10 @@ class DiscoveryService:
             f"{priority_context}"
         )
 
-        # Brug score-sorterede gaps (allerede i priority_context) men send rå gaps
-        # så agenten kan formulere naturlige spørgsmål om dem
-        gaps_text = priority_context  # Indeholder allerede sorterede gaps
-
         return DISCOVERY_SYSTEM_TEMPLATE.format(
             name=name,
             profile_summary=profile_summary,
-            gaps_text=gaps_text,
+            gaps_text=priority_context,
         )
 
     @staticmethod
@@ -465,7 +533,8 @@ class DiscoveryService:
         exps = profile.get("experiences") or []
         if exps:
             exp_block = "ERFARING:\n" + "\n".join(
-                f"  {e.get('title')} @ {e.get('company')} ({e.get('period_start', '')}–{e.get('period_end') or 'nu'})\n"
+                f"  {e.get('title')} @ {e.get('company')} "
+                f"({e.get('period_start', '')}–{e.get('period_end') or 'nu'})\n"
                 f"  {e.get('description', '')}\n"
                 f"  Præstationer: {'; '.join(e.get('achievements') or [])}\n"
                 f"  Teknologier: {', '.join(e.get('technologies') or [])}"
@@ -487,13 +556,16 @@ class DiscoveryService:
             for s in skills:
                 cat = s.get("category", "technical")
                 by_cat.setdefault(cat, []).append(s["name"])
-            skill_lines = "\n".join(f"  {cat}: {', '.join(names)}" for cat, names in by_cat.items())
+            skill_lines = "\n".join(
+                f"  {cat}: {', '.join(names)}" for cat, names in by_cat.items()
+            )
             sections.append(f"KOMPETENCER:\n{skill_lines}")
 
         projects = profile.get("projects") or []
         if projects:
             proj_block = "PROJEKTER:\n" + "\n".join(
-                f"  {p.get('name')} ({p.get('role', '')}): {p.get('description', '')}. Outcome: {p.get('outcomes', '')}"
+                f"  {p.get('name')} ({p.get('role', '')}): "
+                f"{p.get('description', '')}. Outcome: {p.get('outcomes', '')}"
                 for p in projects
             )
             sections.append(proj_block)
@@ -501,7 +573,8 @@ class DiscoveryService:
         achievements = profile.get("achievements") or []
         if achievements:
             ach_block = "PRÆSTATIONER:\n" + "\n".join(
-                f"  [{a.get('impact_level', 'medium').upper()}] {a.get('title')}: {a.get('description')} {a.get('metric', '')}"
+                f"  [{a.get('impact_level', 'medium').upper()}] "
+                f"{a.get('title')}: {a.get('description')} {a.get('metric', '')}"
                 for a in achievements
             )
             sections.append(ach_block)
@@ -512,13 +585,16 @@ class DiscoveryService:
             for s in systems:
                 cat = s.get("category") or "Andet"
                 by_sys_cat.setdefault(cat, []).append(f"{s['name']} ({s.get('proficiency', '')})")
-            sys_lines = "\n".join(f"  {cat}: {', '.join(names)}" for cat, names in by_sys_cat.items())
+            sys_lines = "\n".join(
+                f"  {cat}: {', '.join(names)}" for cat, names in by_sys_cat.items()
+            )
             sections.append(f"SYSTEMER:\n{sys_lines}")
 
         leadership = profile.get("leadership") or []
         if leadership:
             ldr_block = "LEDERSKAB:\n" + "\n".join(
-                f"  {l.get('title')}: {l.get('scope', '')} — {l.get('direct_reports', 0)} direkte rapporterende"
+                f"  {l.get('title')}: {l.get('scope', '')} — "
+                f"{l.get('direct_reports', 0)} direkte rapporterende"
                 for l in leadership
             )
             sections.append(ldr_block)

@@ -283,3 +283,48 @@ class ExperienceService:
             for ldr in leadership
         ]
         self.db.table("cv_leadership").insert(rows).execute()
+
+    def add_certifications_from_discovery(self, user_id: str, certifications: list[dict]) -> None:
+        mcv = self._master_cv_id(user_id)
+        if not mcv or not certifications:
+            return
+        rows = [
+            {
+                "master_cv_id": mcv,
+                "name": c.get("name", ""),
+                "issuer": c.get("issuer"),
+                "issued_at": c.get("issued_at"),
+                "expires_at": c.get("expires_at"),
+                "credential_id": c.get("credential_id"),
+            }
+            for c in certifications
+        ]
+        self.db.table("cv_certifications").insert(rows).execute()
+
+    def apply_experience_additions(self, user_id: str, additions: list[dict]) -> None:
+        """Tilføjer nye achievements og teknologier til eksisterende erfaringer."""
+        mcv = self._master_cv_id(user_id)
+        if not mcv or not additions:
+            return
+        exps = (
+            self.db.table("cv_experiences")
+            .select("id, company, achievements, technologies")
+            .eq("master_cv_id", mcv)
+            .execute()
+            .data
+        )
+        for addition in additions:
+            company = (addition.get("company") or "").lower()
+            for exp in exps:
+                if company and company in (exp.get("company") or "").lower():
+                    current_ach = exp.get("achievements") or []
+                    new_ach = addition.get("new_achievements") or []
+                    current_tech = exp.get("technologies") or []
+                    new_tech = addition.get("new_technologies") or []
+                    merged_ach = list({*current_ach, *new_ach})
+                    merged_tech = list({*current_tech, *new_tech})
+                    self.db.table("cv_experiences").update({
+                        "achievements": merged_ach,
+                        "technologies": merged_tech,
+                    }).eq("id", exp["id"]).execute()
+                    break

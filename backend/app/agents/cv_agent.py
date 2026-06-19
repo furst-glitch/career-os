@@ -128,6 +128,9 @@ Returner KUN et JSON-objekt med NYE facts fra dette specifikke svar:
   "leadership": [
     { "title": string, "scope": string | null, "direct_reports": number | null, "responsibilities": string[] }
   ],
+  "certifications": [
+    { "name": string, "issuer": string | null, "issued_at": "YYYY-MM" | null, "expires_at": "YYYY-MM" | null, "credential_id": string | null }
+  ],
   "experience_additions": [
     { "company": string, "new_achievements": string[], "new_technologies": string[] }
   ],
@@ -135,10 +138,11 @@ Returner KUN et JSON-objekt med NYE facts fra dette specifikke svar:
 }
 
 Regler:
-- Inkludér KUN eksplicit nævnte facts fra dette svar
+- Inkludér KUN eksplicit nævnte facts fra dette specifikke kandidatsvar
 - Brug tomme arrays for sektioner uden nye facts
+- certifications: kun hvis kandidaten eksplicit nævner et certifikat ved navn
 - gaps_resolved: beskrivelser af gaps der nu er tilstrækkeligt besvaret
-- Returner KUN valid JSON"""
+- Returner KUN valid JSON uden markdown-blokke"""
 
 
 class CVAgent(BaseAgent):
