@@ -44,17 +44,18 @@ class BaseAgent(ABC):
             self.supabase.table("agent_registry")
             .select("*, agent_configurations(*)")
             .eq("name", self.name)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        return result.data or {}
+        rows = result.data if result and result.data else []
+        return rows[0] if rows else {}
 
     async def get_memory_context(self) -> str:
         result = self.supabase.rpc(
             "get_memory_snapshot",
             {"p_user_id": self.user_id},
         ).execute()
-        return result.data or ""
+        return (result.data if result else None) or ""
 
     async def log_usage(self, usage: AgentUsage, operation: str = "", used_user_key: bool = False) -> None:
         agent_id = self.config.get("id")

@@ -34,10 +34,10 @@ class LiteLLMProvider:
             self.supabase.table("agent_registry")
             .select("*")
             .eq("name", agent_name)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        config = result.data or {}
+        config = (result.data[0] if result and result.data else None) or {}
         if config:
             override_result = (
                 self.supabase.table("agent_configurations")
@@ -47,7 +47,7 @@ class LiteLLMProvider:
                 .limit(1)
                 .execute()
             )
-            config["agent_configurations"] = override_result.data or []
+            config["agent_configurations"] = (override_result.data if override_result else None) or []
         return config
 
     def _check_budget(self) -> None:
@@ -58,14 +58,15 @@ class LiteLLMProvider:
             self.supabase.table("ai_budgets")
             .select("monthly_limit_usd, warning_threshold, hard_limit, current_spend_usd")
             .eq("user_id", self.user_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
 
-        if not result.data:
+        budget_data = (result.data[0] if result and result.data else None)
+        if not budget_data:
             return
 
-        budget = result.data
+        budget = budget_data
         limit = budget.get("monthly_limit_usd", 0)
         spend = budget.get("current_spend_usd", 0)
 
