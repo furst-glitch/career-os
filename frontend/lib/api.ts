@@ -13,10 +13,22 @@ async function getAuthHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function extractError(res: Response, path: string): Promise<never> {
+  const text = await res.text().catch(() => "");
+  let detail = text;
+  try {
+    const json = JSON.parse(text);
+    detail = json.detail ?? json.message ?? text;
+  } catch {
+    // use raw text
+  }
+  throw new Error(detail || `HTTP ${res.status} ${path}`);
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const headers = await getAuthHeader();
   const res = await fetch(`${API_URL}${path}`, { headers });
-  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  if (!res.ok) return extractError(res, path);
   return res.json();
 }
 
@@ -27,7 +39,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     headers: { ...headers, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  if (!res.ok) return extractError(res, path);
   return res.json();
 }
 
@@ -38,14 +50,14 @@ export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
     headers: { ...headers, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  if (!res.ok) return extractError(res, path);
   return res.json();
 }
 
 export async function apiDelete(path: string): Promise<void> {
   const headers = await getAuthHeader();
   const res = await fetch(`${API_URL}${path}`, { method: "DELETE", headers });
-  if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
+  if (!res.ok) return extractError(res, path);
 }
 
 const EXT_MIME: Record<string, string> = {

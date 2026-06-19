@@ -140,8 +140,9 @@ function ApiKeysTab() {
       setInputs(prev => ({ ...prev, [provider]: "" }));
       await loadProviders();
       setFb(provider, true, "API-nøgle gemt");
-    } catch {
-      setFb(provider, false, "Kunne ikke gemme — tjek at nøglen er korrekt");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFb(provider, false, msg || "Kunne ikke gemme nøglen");
     } finally {
       setSaving(prev => ({ ...prev, [provider]: false }));
     }
@@ -153,8 +154,9 @@ function ApiKeysTab() {
       await apiDelete(`/providers/${provider}`);
       await loadProviders();
       setFb(provider, true, "API-nøgle fjernet");
-    } catch {
-      setFb(provider, false, "Kunne ikke fjerne nøglen");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFb(provider, false, msg || "Kunne ikke fjerne nøglen");
     } finally {
       setDeleting(prev => ({ ...prev, [provider]: false }));
     }
