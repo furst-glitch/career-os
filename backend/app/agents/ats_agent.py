@@ -28,7 +28,10 @@ class ATSAgent(BaseAgent):
             system = (
                 "Du er en ATS-ekspert (Applicant Tracking System). "
                 "Analyser dokumentet og identificer præcist hvad der mangler eller skal forbedres "
-                "for at bestå ATS-scanning og matche stillingen bedst muligt. "
+                "for at bestå ATS-scanning og matche stillingen bedst muligt.\n\n"
+                "NØJAGTIGHEDSREGEL: Vurder KUN nøgleordsmatch og formatering. "
+                "Flag ALDRIG claims som sande eller usande — det er CriticAgentens opgave. "
+                "Overvurder ALDRIG graden af match ('ekspert i X') uden eksplicit belæg i dokumentet.\n\n"
                 "Vær konkret og kortfattet. Maks 5 punkter, ét punkt pr. linje med '-' foran. "
                 "Skriv KUN forbedringspunkterne, ingen introduktion eller opsummering."
             )
@@ -41,7 +44,10 @@ class ATSAgent(BaseAgent):
             system = (
                 "You are an ATS expert (Applicant Tracking System). "
                 "Analyze the document and identify exactly what is missing or must improve "
-                "to pass ATS scanning and best match the position. "
+                "to pass ATS scanning and best match the position.\n\n"
+                "ACCURACY RULE: Assess ONLY keyword match and formatting. "
+                "NEVER validate whether claims are true or false — that is the CriticAgent's job. "
+                "NEVER overstate match level ('expert in X') without explicit evidence in the document.\n\n"
                 "Be specific and concise. Max 5 bullet points, one per line starting with '-'. "
                 "Output ONLY the improvement points, no intro or summary."
             )

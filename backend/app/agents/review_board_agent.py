@@ -42,13 +42,22 @@ class ReviewBoardAgent(BaseAgent):
 
         if language == "da":
             system = (
-                "Du er chefredaktør og producerer den endelige udgave af et CV. "
+                "Du er chefredaktør og producerer den endelige udgave af et CV.\n\n"
+                "NØJAGTIGHEDSTJEK (gennemfør inden du omskriver):\n"
+                "1. Flag enhver påstand der overstater kandidatens faktiske erfaring\n"
+                "2. Verificér at alle tal, DKK-beløb og procenter stammer fra kilden\n"
+                "3. Tjek at lederskabstype er specificeret (formel/faglig/projekt) — aldrig bare 'ledelse'\n"
+                "4. Reducer eller fjern claims der ikke kan verificeres i udkastet\n\n"
+                "HÅRDE BEGRÆNSNINGER:\n"
+                "- 'drev implementeringen' ≠ 'var IT-ansvarlig' — brug det ringeste niveau\n"
+                "- 'bidragede til X' ≠ 'var ansvarlig for X'\n"
+                "- Opfind ALDRIG eksempler, beløb, datoer eller resultater\n\n"
                 "Du modtager et udkast, en prioriteret liste af forbedringer og en template-stilguide. "
                 "Din opgave: omskriv udkastet så det implementerer ALLE forbedringer og følger stilguiden præcist. "
                 "Bevar kandidatens reelle erfaringer og informationer — tilføj eller opfind IKKE facts. "
                 "Output: KUN det forbedrede CV. Ingen kommentarer om hvad du har ændret.\n\n"
-                "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
-                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst."
+                "Skriv med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å.\n"
+                "CO2 altid som 'CO2'. Brug ## til sektionshoveder og - til bullets. Ingen ** eller *."
             )
             user_msg = (
                 f"Stilling: {job_title} hos {job_company}\n\n"
@@ -60,12 +69,21 @@ class ReviewBoardAgent(BaseAgent):
                 user_msg += f"\n\nTemplate-stilguide (følg disse instruktioner):\n{design_guide}"
         else:
             system = (
-                "You are editor-in-chief producing the final version of a CV. "
+                "You are editor-in-chief producing the final version of a CV.\n\n"
+                "ACCURACY CHECK (perform before rewriting):\n"
+                "1. Flag any claim overstating the candidate's actual experience\n"
+                "2. Verify all numbers, amounts and percentages come from the source\n"
+                "3. Check leadership type is specified (formal/functional/project) — never just 'management'\n"
+                "4. Downgrade or remove claims that cannot be verified in the draft\n\n"
+                "HARD CONSTRAINTS:\n"
+                "- 'drove the implementation' ≠ 'was IT responsible' — use the lower claim\n"
+                "- 'contributed to X' ≠ 'was responsible for X'\n"
+                "- NEVER invent examples, amounts, dates or results\n\n"
                 "You receive a draft, a prioritized list of improvements, and a template style guide. "
                 "Your task: rewrite the draft to implement ALL improvements and follow the style guide precisely. "
                 "Preserve the candidate's real experiences and information — do NOT add or invent facts. "
                 "Output: ONLY the improved CV. No commentary about what you changed.\n\n"
-                "Do NOT use markdown formatting (no **, *, # or other symbols). Write plain text."
+                "Use ## for section headers and - for bullets. No **, * or # elsewhere."
             )
             user_msg = (
                 f"Position: {job_title} at {job_company}\n\n"
@@ -104,15 +122,21 @@ class ReviewBoardAgent(BaseAgent):
 
         if language == "da":
             system = (
-                "Du er kreativ direktør og udformer præcise skriveinstruktioner. "
+                "Du er kreativ direktør og udformer præcise skriveinstruktioner.\n\n"
+                "NØJAGTIGHEDSKRAV TIL BRIEFEN:\n"
+                "- Inkludér KUN claims der kan verificeres i kandidatprofilen\n"
+                "- Specificér lederskabstype (formel/faglig/projekt) — aldrig bare 'ledelse'\n"
+                "- Flag gaps ærligt frem for at skjule dem\n"
+                "- Brug 'ca.' eller '+' ved approksimationer\n\n"
                 "Baseret på jobanalysen og de vigtigste krav: producér en konkret skrivebrief "
                 "som en ansøgningsskriver KAN FØLGE for at skrive den perfekte ansøgning.\n\n"
-                "Format:\n"
-                "ÅBNING: [Præcist hvad første afsnit skal sige og hvilken tone]\n"
-                "KERNEPUNKTER: [3 specifikke argumenter der SKAL fremgå med eksempler]\n"
-                "AFSLUTNING: [Hvad afslutningen skal indeholde og call-to-action]\n"
-                "NØGLEORD: [Specifikke ord der SKAL stå i teksten]\n"
-                "UNDGÅ: [Klichéer og fraser der svækker ansøgningen]\n\n"
+                "Ansøgningen skal have 4 afsnit:\n"
+                "ÅBNING: [Afsnit 1 — hvad der præcist skal siges om HVORFOR DENNE ROLLE]\n"
+                "KERNEPUNKT: [Afsnit 2 — kandidatens stærkeste verificerede match med konkret eksempel]\n"
+                "SEKUNDÆR VINKEL ELLER GAP: [Afsnit 3 — anden vinkel ELLER ærlig gap-håndtering]\n"
+                "FREMAD: [Afsnit 4 — selvsikker afslutning med virksomhedsnavnet]\n"
+                "NØGLEORD: [Specifikke ord fra jobopslaget der SKAL stå i teksten]\n"
+                "UNDGÅ: ['Jeg brænder for', 'Jeg er struktureret', 'Det vil jeg meget gerne' og lignende]\n\n"
                 "Maks 200 ord. Vær konkret og direkte — ingen generelle råd."
             )
             user_msg = (
@@ -124,15 +148,21 @@ class ReviewBoardAgent(BaseAgent):
                 user_msg += f"\n\nTemplate-stilguide (inkorporér i briefen):\n{design_guide}"
         else:
             system = (
-                "You are a creative director producing precise writing instructions. "
+                "You are a creative director producing precise writing instructions.\n\n"
+                "ACCURACY REQUIREMENTS FOR THE BRIEF:\n"
+                "- Include ONLY claims verifiable in the candidate profile\n"
+                "- Specify leadership type (formal/functional/project) — never just 'management'\n"
+                "- Address gaps honestly rather than hiding them\n"
+                "- Use 'approx.' or '+' for approximations\n\n"
                 "Based on the job analysis and key requirements: produce a concrete writing brief "
                 "that a letter writer CAN FOLLOW to write the perfect application.\n\n"
-                "Format:\n"
-                "OPENING: [Exactly what the first paragraph should say and tone]\n"
-                "CORE POINTS: [3 specific arguments that MUST appear with examples]\n"
-                "CLOSING: [What the closing should contain and call-to-action]\n"
-                "KEYWORDS: [Specific words that MUST appear in the text]\n"
-                "AVOID: [Clichés and phrases that weaken the application]\n\n"
+                "The application must have 4 paragraphs:\n"
+                "OPENING: [Paragraph 1 — exactly what to say about WHY THIS ROLE]\n"
+                "CORE POINT: [Paragraph 2 — strongest verified match with concrete example]\n"
+                "SECONDARY ANGLE OR GAP: [Paragraph 3 — another angle OR honest gap handling]\n"
+                "FORWARD: [Paragraph 4 — confident close naming the company]\n"
+                "KEYWORDS: [Specific words from the job posting that MUST appear in the text]\n"
+                "AVOID: ['passionate about', 'I am structured', 'I would very much like to' and similar]\n\n"
                 "Max 200 words. Be concrete and direct — no generic advice."
             )
             user_msg = (
