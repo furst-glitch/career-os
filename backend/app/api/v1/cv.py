@@ -8,7 +8,7 @@ POST /cv/master/generate      Generer Master CV (SSE streaming)
 """
 import os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agents.cv_agent import CVAgent
@@ -40,15 +40,22 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 async def upload_cv(
     request: Request,
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
     """
     Upload et eksisterende CV (PDF/DOCX/TXT).
-    Parser det med AI, populerer profil-tabeller og opretter en discovery-session.
-    Returnerer: { upload_id, session_id, parsed_sections, gaps }
+    Parser det med AI og returnerer SSE-stream med progress-events.
+
+    SSE events:
+      data: {"type": "progress", "step": str, "pct": int, "message": str}
+      data: {"type": "done",     "data": {upload_id, session_id, parsed_sections, gaps, personal}}
+      data: {"type": "error",    "message": str}
+      : ping   (keep-alive mens AI tænker)
     """
+    import asyncio
+    import json as _json
+
     # Validering — fald tilbage på extension hvis browser ikke sender korrekt MIME-type
     mime = file.content_type or "application/octet-stream"
     if mime not in ALLOWED_MIME_TYPES and file.filename:
@@ -62,54 +69,87 @@ async def upload_cv(
         raise HTTPException(413, "Fil for stor (max 10 MB)")
 
     user_id = user["id"]
+    filename = file.filename or "cv"
     cv_service = CVService(supabase)
 
-    # Opret upload-record
-    upload_id = await cv_service.create_upload(user_id, file.filename or "cv", mime)
+    def _prog(step: str, pct: int, message: str) -> str:
+        return f"data: {_json.dumps({'type': 'progress', 'step': step, 'pct': pct, 'message': message})}\n\n"
 
-    try:
-        # Ekstraher tekst
-        raw_text = extract_text(content, mime)
-        if not raw_text.strip():
-            await cv_service.mark_failed(upload_id, "Kunne ikke ekstraherer tekst fra filen")
-            raise HTTPException(422, "Filen ser ud til at være tom eller ikke-læsbar")
+    async def process():
+        upload_id = await cv_service.create_upload(user_id, filename, mime)
+        try:
+            # Trin 1: Ekstraher tekst
+            yield _prog("extract", 10, "Læser fil...")
+            raw_text = extract_text(content, mime)
+            if not raw_text.strip():
+                await cv_service.mark_failed(upload_id, "Ingen tekst fundet")
+                yield f"data: {_json.dumps({'type': 'error', 'message': 'Filen ser ud til at være tom eller ikke-læsbar'})}\n\n"
+                return
 
-        # Parse med CV Agent
-        agent = CVAgent(user_id=user_id, supabase=supabase)
-        result = await agent.run({"raw_text": raw_text})
-        parsed = result.metadata.get("parsed_data", {})
-        gaps = result.metadata.get("gaps", [])
+            # Trin 2: AI-analyse — kør i baggrunden med ping keep-alive
+            yield _prog("ai_parse", 20, "AI analyserer dit CV... (dette tager typisk 30-90 sekunder)")
 
-        # Gem parsed data
-        await cv_service.save_parsed(upload_id, raw_text, parsed)
+            queue: asyncio.Queue = asyncio.Queue()
 
-        # Populér profil-tabeller + opret discovery session
-        session_id = await cv_service.populate_profile_from_parsed(user_id, upload_id, parsed)
+            async def run_agent():
+                try:
+                    agent = CVAgent(user_id=user_id, supabase=supabase)
+                    r = await agent.run({"raw_text": raw_text})
+                    await queue.put(("ok", r))
+                except Exception as exc:
+                    await queue.put(("err", str(exc)))
 
-        # Background: refresh career memory snapshot
-        background_tasks.add_task(on_cv_uploaded, user_id, supabase)
+            task = asyncio.create_task(run_agent())
+            agent_result = None
+            ping_count = 0
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    if kind == "ok":
+                        agent_result = payload
+                    else:
+                        await cv_service.mark_failed(upload_id, payload)
+                        yield f"data: {_json.dumps({'type': 'error', 'message': f'Analyse fejlede: {payload}'})}\n\n"
+                        task.cancel()
+                        return
+                    break
+                except asyncio.TimeoutError:
+                    ping_count += 1
+                    pct = min(20 + ping_count * 3, 70)
+                    yield f": ping\n\n"
+                    # Update progress pct every ~15s (every 3rd ping)
+                    if ping_count % 3 == 0:
+                        yield _prog("ai_parse", pct, f"AI analyserer... ({ping_count * 5}s)")
 
-        return {
-            "upload_id": upload_id,
-            "session_id": session_id,
-            "parsed_sections": {
-                "experiences": len(parsed.get("experiences") or []),
-                "educations": len(parsed.get("educations") or []),
-                "skills": len(parsed.get("skills") or []),
-                "projects": len(parsed.get("projects") or []),
-                "certifications": len(parsed.get("certifications") or []),
-                "systems": len(parsed.get("systems") or []),
-                "leadership": len(parsed.get("leadership") or []),
-            },
-            "gaps": gaps,
-            "personal": parsed.get("personal") or {},
-        }
+            # Trin 3: Gem til database
+            yield _prog("saving", 82, "Gemmer din profil...")
+            parsed = agent_result.metadata.get("parsed_data", {})
+            gaps = agent_result.metadata.get("gaps", [])
+            await cv_service.save_parsed(upload_id, raw_text, parsed)
+            session_id = await cv_service.populate_profile_from_parsed(user_id, upload_id, parsed)
 
-    except HTTPException:
-        raise
-    except Exception as exc:
-        await cv_service.mark_failed(upload_id, str(exc))
-        raise HTTPException(500, f"Fejl under parsing: {exc}") from exc
+            # Refresh career memory (fire-and-forget — no BackgroundTasks inside generator)
+            asyncio.create_task(on_cv_uploaded(user_id, supabase))
+
+            yield _prog("done", 100, "Analyse færdig!")
+            yield f"data: {_json.dumps({'type': 'done', 'data': {'upload_id': upload_id, 'session_id': session_id, 'parsed_sections': {'experiences': len(parsed.get('experiences') or []), 'educations': len(parsed.get('educations') or []), 'skills': len(parsed.get('skills') or []), 'projects': len(parsed.get('projects') or []), 'certifications': len(parsed.get('certifications') or []), 'systems': len(parsed.get('systems') or []), 'leadership': len(parsed.get('leadership') or [])}, 'gaps': gaps, 'personal': parsed.get('personal') or {}}})}\n\n"
+
+        except Exception as exc:
+            try:
+                await cv_service.mark_failed(upload_id, str(exc))
+            except Exception:
+                pass
+            yield f"data: {_json.dumps({'type': 'error', 'message': f'Uventet fejl: {exc}'})}\n\n"
+
+    return StreamingResponse(
+        process(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/master")

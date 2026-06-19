@@ -180,10 +180,11 @@ class LiteLLMProvider:
         if api_base:
             call_kwargs["api_base"] = api_base
 
-        # Timeout prevents hanging connections when Anthropic/OpenAI is slow.
-        # Render drops connections with TCP reset (browser "Failed to fetch") after ~30s
-        # without a response — so 25s hard limit ensures we always return a proper error.
-        call_kwargs.setdefault("timeout", 30)
+        # Use agent's configured timeout_seconds from agent_registry.
+        # Caller can override by passing timeout= in kwargs (already in call_kwargs via **kwargs).
+        if "timeout" not in call_kwargs:
+            agent_cfg = await self._get_agent_config(agent_name)
+            call_kwargs["timeout"] = agent_cfg.get("timeout_seconds", 60)
 
         start = time.time()
         try:

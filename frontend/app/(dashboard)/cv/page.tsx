@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiUpload } from "@/lib/api";
+import { apiUploadStream, type UploadProgressEvent } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,13 @@ const SECTION_LABELS: Record<string, string> = {
   certifications: "Certifikater",
 };
 
+const STEP_LABELS: Record<string, string> = {
+  extract:  "Læser fil",
+  ai_parse: "AI analyserer",
+  saving:   "Gemmer profil",
+  done:     "Færdig",
+};
+
 export default function CVUploadPage() {
   const router = useRouter();
   const [state, setState] = useState<UploadState>("idle");
@@ -31,6 +38,7 @@ export default function CVUploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [progress, setProgress] = useState<UploadProgressEvent>({ step: "extract", pct: 0, message: "" });
 
   async function uploadFile(file: File) {
     const EXT_MAP: Record<string, string> = {
@@ -54,17 +62,22 @@ export default function CVUploadPage() {
     setFileName(file.name);
     setState("uploading");
     setError(null);
+    setProgress({ step: "extract", pct: 5, message: "Starter upload..." });
 
     try {
-      const data = await apiUpload<UploadResult>("/cv/upload", file);
+      const data = await apiUploadStream<UploadResult>(
+        "/cv/upload",
+        file,
+        (evt) => setProgress(evt),
+      );
       setResult(data);
       setState("success");
-      // Store session for the interview page
       if (data.session_id) {
         localStorage.setItem("careeros_session_id", data.session_id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload mislykkedes.");
+      const msg = err instanceof Error ? err.message : "Upload mislykkedes.";
+      setError(msg);
       setState("error");
     }
   }
@@ -98,39 +111,66 @@ export default function CVUploadPage() {
           className={`cursor-pointer border-2 border-dashed transition-colors ${
             dragOver
               ? "border-blue-500 bg-blue-50"
+              : state === "uploading"
+              ? "border-blue-300 bg-blue-50/40"
               : "border-slate-300 hover:border-blue-400"
           }`}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          <label className="flex cursor-pointer flex-col items-center gap-4 py-8">
-            <div className={`rounded-full p-4 ${dragOver ? "bg-blue-100" : "bg-slate-100"}`}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={dragOver ? "#2563eb" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
+          <label className={`flex flex-col items-center gap-4 py-8 ${state === "uploading" ? "pointer-events-none" : "cursor-pointer"}`}>
+            <div className={`rounded-full p-4 ${dragOver ? "bg-blue-100" : state === "uploading" ? "bg-blue-50" : "bg-slate-100"}`}>
+              {state === "uploading" ? (
+                <svg className="h-8 w-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              ) : (
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={dragOver ? "#2563eb" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              )}
             </div>
-            <div className="text-center">
+
+            <div className="w-full max-w-sm text-center">
               <p className="font-medium text-slate-900">
                 {state === "uploading"
                   ? `Analyserer ${fileName}…`
                   : "Træk dit CV hertil eller klik for at vælge"}
               </p>
-              <p className="mt-1 text-sm text-slate-500">
-                {ACCEPTED_EXT} · Maks. 10 MB
-              </p>
+              {state !== "uploading" && (
+                <p className="mt-1 text-sm text-slate-500">{ACCEPTED_EXT} · Maks. 10 MB</p>
+              )}
             </div>
+
             {state === "uploading" && (
-              <div className="flex items-center gap-2 text-sm text-blue-600">
-                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-                AI analyserer dit CV…
+              <div className="w-full max-w-sm space-y-3">
+                {/* Progress bar */}
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                    style={{ width: `${progress.pct}%` }}
+                  />
+                </div>
+                {/* Step label */}
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  {(["extract", "ai_parse", "saving", "done"] as const).map((step) => (
+                    <span
+                      key={step}
+                      className={progress.step === step ? "font-semibold text-blue-600" : ""}
+                    >
+                      {STEP_LABELS[step]}
+                    </span>
+                  ))}
+                </div>
+                {/* Current message */}
+                <p className="text-center text-sm text-blue-700">{progress.message}</p>
               </div>
             )}
+
             <input
               type="file"
               accept={ACCEPTED_EXT}
@@ -171,7 +211,7 @@ export default function CVUploadPage() {
 
           {/* Parsed sections */}
           <Card>
-            <h2 className="mb-4 font-semibold text-slate-900">Hvad AI'en fandt</h2>
+            <h2 className="mb-4 font-semibold text-slate-900">Hvad AI&apos;en fandt</h2>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {Object.entries(result.parsed_sections).map(([key, count]) => (
                 count > 0 && (
