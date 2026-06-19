@@ -192,9 +192,13 @@ export async function apiStream(
   let doneCalled = false;
 
   function dispatchEvent(event: string): void {
-    // Skip SSE comment lines (": ping" keep-alive)
-    if (event.trimStart().startsWith(":")) return;
-    const dataLine = event.split("\n").find((l) => l.startsWith("data: "));
+    // Filter out SSE comment lines (": ping") individually before looking for data:
+    // Checking only the first line is not enough — a comment and data: line can
+    // arrive in the same buffer chunk when \n\n splitting is off by one.
+    const dataLine = event
+      .split("\n")
+      .filter((l) => !l.trimStart().startsWith(":"))
+      .find((l) => l.startsWith("data: "));
     if (!dataLine) return;
     try {
       const payload = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
