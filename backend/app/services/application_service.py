@@ -115,6 +115,7 @@ class ApplicationService:
         language: str,
     ) -> dict:
         """Gemmer AI-genereret ansøgning som document_version og tilknytter til pipeline."""
+        import hashlib
         mcv = self.db.table("master_cvs").select("id").eq("user_id", user_id).limit(1).execute()
         mcv_id = mcv.data[0]["id"] if mcv.data else None
 
@@ -135,6 +136,7 @@ class ApplicationService:
             "pipeline_id": pipeline_id,
             "title": title,
             "content": content,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
             "language": language,
             "version_number": next_version,
             "document_type": "cover_letter",
