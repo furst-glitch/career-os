@@ -17,6 +17,8 @@ from app.api.v1 import (
     providers,
     export,
     career_coach,
+    job_discovery,
+    templates,
 )
 
 api_router = APIRouter()
@@ -38,3 +40,5 @@ api_router.include_router(gdpr.router)
 api_router.include_router(providers.router)
 api_router.include_router(export.router)
 api_router.include_router(career_coach.router)
+api_router.include_router(job_discovery.router)
+api_router.include_router(templates.router)

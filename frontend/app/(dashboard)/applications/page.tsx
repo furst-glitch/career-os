@@ -124,6 +124,14 @@ function CoverLetterModal({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<Array<{ id: string; name: string; language: string; writing_style: string; focus_areas: string[] }>>([]);
+
+  // Load templates on mount
+  useEffect(() => {
+    apiGet<typeof templates>("/templates?type=cover_letter")
+      .then(setTemplates)
+      .catch(() => {});
+  }, []);
 
   async function generate() {
     setLoading(true);
@@ -218,6 +226,29 @@ function CoverLetterModal({
         {/* Config */}
         {!content && (
           <div className="border-b border-slate-100 px-6 py-4">
+            {/* Template quick-load */}
+            {templates.length > 0 && (
+              <div className="mb-4">
+                <label className="mb-1 block text-xs font-medium text-slate-600">Brug skabelon (valgfri)</label>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                  defaultValue=""
+                  onChange={e => {
+                    const t = templates.find(x => x.id === e.target.value);
+                    if (t) {
+                      setLang(t.language as "da" | "en");
+                      setStyle(t.writing_style);
+                      setFocus(t.focus_areas.join(", "));
+                    }
+                  }}
+                >
+                  <option value="">— Ingen skabelon —</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Sprog</label>
