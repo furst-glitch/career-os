@@ -111,17 +111,38 @@ function ApiKeysTab() {
   const [deleting, setDeleting] = useState<Record<ProviderId, boolean>>({ anthropic: false, openai: false });
   const [feedback, setFeedback] = useState<Record<ProviderId, { ok: boolean; msg: string } | null>>({ anthropic: null, openai: null });
   const [loading, setLoading] = useState(true);
+  const [defaultProvider, setDefaultProvider] = useState<string | null>(null);
+  const [savingDefault, setSavingDefault] = useState(false);
+  const [defaultSaved, setDefaultSaved] = useState(false);
 
   async function loadProviders() {
     try {
-      const { providers } = await apiGet<{ providers: ProviderInfo[] }>("/providers");
+      const [{ providers }, { default_provider }] = await Promise.all([
+        apiGet<{ providers: ProviderInfo[] }>("/providers"),
+        apiGet<{ default_provider: string | null }>("/providers/default"),
+      ]);
       const map: Record<string, ProviderInfo> = {};
       for (const p of providers) map[p.provider] = p;
       setConfigured(map);
+      setDefaultProvider(default_provider ?? null);
     } catch {
       // ignore
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function saveDefault(provider: string) {
+    setSavingDefault(true);
+    try {
+      await apiPut("/providers/default", { provider });
+      setDefaultProvider(provider);
+      setDefaultSaved(true);
+      setTimeout(() => setDefaultSaved(false), 2000);
+    } catch {
+      // ignore
+    } finally {
+      setSavingDefault(false);
     }
   }
 
@@ -183,6 +204,43 @@ function ApiKeysTab() {
           Nøglerne bruges direkte i dine AI-kald — du betaler selv til udbyderen.
         </p>
       </div>
+
+      {/* Standard AI-udbyder */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Standard AI-udbyder</CardTitle>
+        </CardHeader>
+        <div className="mt-4 space-y-3">
+          <p className="text-xs text-slate-500">
+            Vælg hvilken AI-udbyder der bruges til alle kald. Kræver at nøglen er tilføjet nedenfor.
+          </p>
+          <div className="flex items-center gap-3">
+            <select
+              className={I + " flex-1"}
+              value={defaultProvider ?? ""}
+              onChange={e => saveDefault(e.target.value)}
+              disabled={savingDefault}
+            >
+              <option value="">Standard (Anthropic)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT-4o)</option>
+            </select>
+            {savingDefault && (
+              <svg className="h-4 w-4 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+            )}
+            {defaultSaved && <span className="text-xs font-medium text-green-600">✓ Gemt</span>}
+          </div>
+          {defaultProvider === "openai" && !configured["openai"] && (
+            <p className="text-xs text-amber-600">Husk at tilføje din OpenAI-nøgle nedenfor.</p>
+          )}
+          {defaultProvider === "anthropic" && !configured["anthropic"] && (
+            <p className="text-xs text-amber-600">Husk at tilføje din Anthropic-nøgle nedenfor.</p>
+          )}
+        </div>
+      </Card>
 
       {PROVIDERS.map(p => {
         const info = configured[p.id];
