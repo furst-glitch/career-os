@@ -86,6 +86,12 @@ class LiteLLMProvider:
             return result.data[0].get("default_ai_provider")
         return None
 
+    def _default_model_for_provider(self, provider: str) -> str:
+        """Returnerer standardmodel for en given provider fra settings (ingen hardcodes)."""
+        if provider == "anthropic":
+            return settings.anthropic_default_model
+        return settings.openai_default_model
+
     async def _resolve_model(self, agent_name: str, provider: str | None = None) -> tuple[str, str]:
         config = await self._get_agent_config(agent_name)
         overrides = config.get("agent_configurations") or [{}]
@@ -97,7 +103,12 @@ class LiteLLMProvider:
             or await self._get_user_default_provider()
             or config.get("default_provider", "openai")
         )
-        resolved_model = override.get("model_override") or config.get("default_model", "gpt-4o")
+        # Model priority: user override → agent_registry DB → settings default
+        resolved_model = (
+            override.get("model_override")
+            or config.get("default_model")
+            or self._default_model_for_provider(resolved_provider)
+        )
 
         return resolved_provider, resolved_model
 
@@ -180,6 +191,7 @@ class LiteLLMProvider:
         except Exception as exc:
             exc_name = type(exc).__name__
             exc_str = str(exc)
+
             # AuthenticationError → bad/missing key
             if "AuthenticationError" in exc_name or "401" in exc_str:
                 raise NoProviderKeyError(
@@ -190,6 +202,23 @@ class LiteLLMProvider:
                 raise TimeoutError(
                     "AI-svaret tog for lang tid (>30 sek). Prøv igen — udbyderen er langsom lige nu."
                 )
+            # NotFoundError / model not found → try settings default model as fallback
+            if "NotFoundError" in exc_name or "not_found" in exc_str.lower() or "model_not_found" in exc_str.lower():
+                fallback_model = self._default_model_for_provider(resolved_provider)
+                if fallback_model != model:
+                    import logging
+                    logging.getLogger("app.providers").warning(
+                        "Model '%s' ikke fundet for provider '%s'. Prøver fallback '%s'.",
+                        model, resolved_provider, fallback_model,
+                    )
+                    if resolved_provider == "openai":
+                        fallback_litellm = fallback_model
+                    else:
+                        fallback_litellm = f"{resolved_provider}/{fallback_model}"
+                    fallback_kwargs = {**call_kwargs, "model": fallback_litellm}
+                    response = await litellm.acompletion(**fallback_kwargs)
+                    self._latency_ms = int((time.time() - start) * 1000)
+                    return response
             # Re-raise everything else (NoProviderKeyError, BudgetExceeded, etc.)
             raise
         self._latency_ms = int((time.time() - start) * 1000)

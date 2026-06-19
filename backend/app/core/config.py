@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ollama_base_url: str | None = None
 
+    # Standardmodeller — kan overrides via env vars
+    # Ændres kun her (ikke i agent_registry eller Python-kode)
+    anthropic_default_model: str = "claude-sonnet-4-6"
+    openai_default_model: str = "gpt-4o"
+
     # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
