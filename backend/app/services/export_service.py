@@ -507,9 +507,11 @@ def export_text_as_pdf(
     template: str = "corporate",
     applicant_name: str = "",
     company_name: str = "",
+    profile: dict | None = None,
 ) -> bytes:
     from app.services.app_export_templates import render_app_pdf
-    return render_app_pdf(title, content, template, applicant_name, company_name)
+    name = (profile or {}).get("full_name") or (profile or {}).get("display_name") or applicant_name
+    return render_app_pdf(title, content, template, name, company_name, profile or {})
 
 
 def export_text_as_docx(
@@ -518,9 +520,11 @@ def export_text_as_docx(
     template: str = "corporate",
     applicant_name: str = "",
     company_name: str = "",
+    profile: dict | None = None,
 ) -> bytes:
     from app.services.app_export_templates import render_app_docx
-    return render_app_docx(title, content, template, applicant_name, company_name)
+    name = (profile or {}).get("full_name") or (profile or {}).get("display_name") or applicant_name
+    return render_app_docx(title, content, template, name, company_name, profile or {})
 
 
 def export_cv_as_pdf(cv_data: dict, template: str = "ats_professional") -> bytes:

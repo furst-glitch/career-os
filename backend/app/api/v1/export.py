@@ -50,7 +50,9 @@ def _load_cv_data(supabase, user_id: str) -> dict:
         raise HTTPException(404, "Ingen Master CV fundet — upload dit CV først")
     mcv = mcv_row.data[0]
     mcv_id = mcv["id"]
-    profile = supabase.table("user_profiles").select("display_name, default_cv_template").eq("user_id", user_id).limit(1).execute()
+    profile = supabase.table("user_profiles").select(
+        "display_name, full_name, email, phone, location, linkedin_url, default_cv_template, default_app_template"
+    ).eq("user_id", user_id).limit(1).execute()
     profile_data = profile.data[0] if profile.data else {}
     return {
         "profile": profile_data,
@@ -145,11 +147,10 @@ async def export_document_pdf(
     if is_cv:
         pdf_bytes = export_generated_cv_as_pdf(title, content, profile)
     else:
-        applicant_name = profile.get("display_name") or ""
         resolved = template if template in APP_TEMPLATES else (
             profile.get("default_app_template") or "corporate"
         )
-        pdf_bytes = export_text_as_pdf(title, content, resolved, applicant_name)
+        pdf_bytes = export_text_as_pdf(title, content, resolved, profile=profile)
 
     filename = _safe_filename(title) + ".pdf"
     return Response(
@@ -185,11 +186,10 @@ async def export_document_docx(
     if is_cv:
         docx_bytes = export_generated_cv_as_docx(title, content, profile)
     else:
-        applicant_name = profile.get("display_name") or ""
         resolved = template if template in APP_TEMPLATES else (
             profile.get("default_app_template") or "corporate"
         )
-        docx_bytes = export_text_as_docx(title, content, resolved, applicant_name)
+        docx_bytes = export_text_as_docx(title, content, resolved, profile=profile)
 
     filename = _safe_filename(title) + ".docx"
     return Response(

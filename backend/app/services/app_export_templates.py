@@ -76,7 +76,7 @@ def _render_body_pdf(pdf, content: str, body_size: float, heading_color: tuple,
 # ── 1. Corporate ──────────────────────────────────────────────────────────────
 
 def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
-                      company_name: str = "") -> bytes:
+                      company_name: str = "", profile: dict | None = None) -> bytes:
     """Formal professional — blue header bar, sans-serif, formal letterhead."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -84,6 +84,7 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
     BLUE = (30, 64, 175)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p = profile or {}
 
     pdf = FPDF()
     pdf.set_margins(22, 20, 22)
@@ -110,7 +111,12 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(*DARK)
         pdf.cell(0, 5, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(0.5)
+        contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
+        if contact_parts:
+            pdf.set_font("Helvetica", "", 8.5)
+            pdf.set_text_color(*GRY)
+            pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(1)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRY)
     pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -137,7 +143,7 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
 # ── 2. Executive ─────────────────────────────────────────────────────────────
 
 def app_pdf_executive(title: str, content: str, applicant_name: str = "",
-                      company_name: str = "") -> bytes:
+                      company_name: str = "", profile: dict | None = None) -> bytes:
     """Premium letterhead — Times, gold double rule, wide margins."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -145,6 +151,7 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
     GOLD = (140, 90, 20)
     DARK = (10, 15, 35)
     GREY = (90, 100, 120)
+    p = profile or {}
 
     pdf = FPDF()
     pdf.set_margins(30, 26, 30)
@@ -155,6 +162,11 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
     pdf.set_font("Times", "B", 20)
     pdf.set_text_color(*DARK)
     pdf.cell(0, 10, _s(applicant_name or ""), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
+    if contact_parts:
+        pdf.set_font("Times", "", 9)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     pdf.ln(1)
     pdf.set_draw_color(*GOLD)
@@ -224,7 +236,7 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
 # ── 3. Modern ────────────────────────────────────────────────────────────────
 
 def app_pdf_modern(title: str, content: str, applicant_name: str = "",
-                   company_name: str = "") -> bytes:
+                   company_name: str = "", profile: dict | None = None) -> bytes:
     """Clean modern — teal accent strip, ample whitespace."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -232,6 +244,7 @@ def app_pdf_modern(title: str, content: str, applicant_name: str = "",
     TEAL = (13, 148, 136)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p = profile or {}
 
     pdf = FPDF()
     pdf.set_margins(22, 22, 22)
@@ -256,6 +269,9 @@ def app_pdf_modern(title: str, content: str, applicant_name: str = "",
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRY)
+    contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
+    if contact_parts:
+        pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     if company_name:
         pdf.cell(0, 5, _s(f"Til: {company_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -286,7 +302,7 @@ def app_pdf_modern(title: str, content: str, applicant_name: str = "",
 # ── 4. Technical ─────────────────────────────────────────────────────────────
 
 def app_pdf_technical(title: str, content: str, applicant_name: str = "",
-                      company_name: str = "") -> bytes:
+                      company_name: str = "", profile: dict | None = None) -> bytes:
     """Crisp minimal monochrome — wide margins, structured, no decorative colour."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -294,6 +310,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
     DARK = (10, 15, 35)
     MED = (70, 80, 100)
     LGT = (160, 170, 185)
+    p = profile or {}
 
     pdf = FPDF()
     pdf.set_margins(24, 24, 24)
@@ -305,6 +322,11 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*DARK)
         pdf.cell(0, 7, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
+        if contact_parts:
+            pdf.set_font("Helvetica", "", 8.5)
+            pdf.set_text_color(*MED)
+            pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_draw_color(*DARK)
     pdf.set_line_width(0.5)
@@ -372,7 +394,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
 # ── 5. Graduate ──────────────────────────────────────────────────────────────
 
 def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
-                     company_name: str = "") -> bytes:
+                     company_name: str = "", profile: dict | None = None) -> bytes:
     """Friendly professional — purple-to-blue gradient header band, readable."""
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -381,6 +403,7 @@ def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
     BLUE = (59, 130, 246)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p = profile or {}
 
     pdf = FPDF()
     pdf.set_margins(20, 20, 20)
@@ -408,9 +431,12 @@ def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
 
     pdf.set_y(38)
 
-    # Date + company
+    # Contact info + date + company
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRY)
+    contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
+    if contact_parts:
+        pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     info = _today()
     if company_name:
         info = f"{company_name}  ·  {info}"
@@ -521,13 +547,14 @@ def _doc_bytes(doc) -> bytes:
 # ── 1. Corporate DOCX ────────────────────────────────────────────────────────
 
 def app_docx_corporate(title: str, content: str, applicant_name: str = "",
-                        company_name: str = "") -> bytes:
+                        company_name: str = "", profile: dict | None = None) -> bytes:
     from docx import Document
     from docx.shared import Inches, Pt
 
     BLUE = (30, 64, 175)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p_data = profile or {}
 
     doc = Document()
     sec = doc.sections[0]
@@ -552,10 +579,15 @@ def app_docx_corporate(title: str, content: str, applicant_name: str = "",
     doc.add_paragraph()
 
     if applicant_name:
-        p = doc.add_paragraph(); _para_space(p, 0, 20)
+        p = doc.add_paragraph(); _para_space(p, 0, 10)
         r = p.add_run(_s(applicant_name))
         r.font.name = "Calibri"; r.font.bold = True; r.font.size = Pt(11)
         r.font.color.rgb = _rgb(DARK)
+        contact_parts = [x for x in [p_data.get("email"), p_data.get("phone"), p_data.get("location")] if x]
+        if contact_parts:
+            pc = doc.add_paragraph(); _para_space(pc, 0, 20)
+            rc = pc.add_run(_s("  ·  ".join(contact_parts)))
+            rc.font.name = "Calibri"; rc.font.size = Pt(9); rc.font.color.rgb = _rgb(GRY)
 
     p = doc.add_paragraph(); _para_space(p, 0, 80)
     r = p.add_run(_s(_today()))
@@ -568,7 +600,7 @@ def app_docx_corporate(title: str, content: str, applicant_name: str = "",
 # ── 2. Executive DOCX ────────────────────────────────────────────────────────
 
 def app_docx_executive(title: str, content: str, applicant_name: str = "",
-                        company_name: str = "") -> bytes:
+                        company_name: str = "", profile: dict | None = None) -> bytes:
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Inches, Pt
@@ -576,6 +608,7 @@ def app_docx_executive(title: str, content: str, applicant_name: str = "",
     GOLD = (140, 90, 20)
     DARK = (10, 15, 35)
     GREY = (90, 100, 120)
+    p_data = profile or {}
 
     doc = Document()
     sec = doc.sections[0]
@@ -583,11 +616,17 @@ def app_docx_executive(title: str, content: str, applicant_name: str = "",
     sec.left_margin = Inches(1.2); sec.right_margin = Inches(1.2)
 
     if applicant_name:
-        p = doc.add_paragraph(); _para_space(p, 0, 40)
+        p = doc.add_paragraph(); _para_space(p, 0, 10)
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r = p.add_run(_s(applicant_name))
         r.font.name = "Georgia"; r.font.size = Pt(20); r.font.bold = True
         r.font.color.rgb = _rgb(DARK)
+        contact_parts = [x for x in [p_data.get("email"), p_data.get("phone"), p_data.get("location")] if x]
+        if contact_parts:
+            pc = doc.add_paragraph(); _para_space(pc, 0, 30)
+            pc.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            rc = pc.add_run(_s("  ·  ".join(contact_parts)))
+            rc.font.name = "Georgia"; rc.font.size = Pt(9); rc.font.color.rgb = _rgb(GREY)
 
     _add_hr_docx(doc, GOLD, 12)
     _add_hr_docx(doc, GOLD, 4)
@@ -623,7 +662,7 @@ def app_docx_executive(title: str, content: str, applicant_name: str = "",
 # ── 3. Modern DOCX ───────────────────────────────────────────────────────────
 
 def app_docx_modern(title: str, content: str, applicant_name: str = "",
-                     company_name: str = "") -> bytes:
+                     company_name: str = "", profile: dict | None = None) -> bytes:
     from docx import Document
     from docx.shared import Inches, Pt
 
@@ -631,6 +670,7 @@ def app_docx_modern(title: str, content: str, applicant_name: str = "",
     TEAL_D = (10, 100, 90)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p_data = profile or {}
 
     doc = Document()
     sec = doc.sections[0]
@@ -656,6 +696,12 @@ def app_docx_modern(title: str, content: str, applicant_name: str = "",
 
     doc.add_paragraph()
 
+    contact_parts = [x for x in [p_data.get("email"), p_data.get("phone"), p_data.get("location")] if x]
+    if contact_parts:
+        pc = doc.add_paragraph(); _para_space(pc, 0, 20)
+        rc = pc.add_run(_s("  ·  ".join(contact_parts)))
+        rc.font.name = "Calibri"; rc.font.size = Pt(9); rc.font.color.rgb = _rgb(GRY)
+
     p = doc.add_paragraph(); _para_space(p, 0, 60)
     info = _s(_today())
     if company_name: info = _s(f"{company_name}  ·  {_today()}")
@@ -670,13 +716,14 @@ def app_docx_modern(title: str, content: str, applicant_name: str = "",
 # ── 4. Technical DOCX ────────────────────────────────────────────────────────
 
 def app_docx_technical(title: str, content: str, applicant_name: str = "",
-                        company_name: str = "") -> bytes:
+                        company_name: str = "", profile: dict | None = None) -> bytes:
     from docx import Document
     from docx.shared import Inches, Pt
 
     DARK = (10, 15, 35)
     MED = (70, 80, 100)
     LGT = (160, 170, 185)
+    p_data = profile or {}
 
     doc = Document()
     sec = doc.sections[0]
@@ -684,10 +731,15 @@ def app_docx_technical(title: str, content: str, applicant_name: str = "",
     sec.left_margin = Inches(1); sec.right_margin = Inches(1)
 
     if applicant_name:
-        p = doc.add_paragraph(); _para_space(p, 0, 20)
+        p = doc.add_paragraph(); _para_space(p, 0, 10)
         r = p.add_run(_s(applicant_name))
         r.font.name = "Calibri"; r.font.bold = True; r.font.size = Pt(13)
         r.font.color.rgb = _rgb(DARK)
+        contact_parts = [x for x in [p_data.get("email"), p_data.get("phone"), p_data.get("location")] if x]
+        if contact_parts:
+            pc = doc.add_paragraph(); _para_space(pc, 0, 20)
+            rc = pc.add_run(_s("  ·  ".join(contact_parts)))
+            rc.font.name = "Calibri"; rc.font.size = Pt(9); rc.font.color.rgb = _rgb(MED)
 
     _add_hr_docx(doc, DARK, 8)
 
@@ -715,13 +767,14 @@ def app_docx_technical(title: str, content: str, applicant_name: str = "",
 # ── 5. Graduate DOCX ─────────────────────────────────────────────────────────
 
 def app_docx_graduate(title: str, content: str, applicant_name: str = "",
-                       company_name: str = "") -> bytes:
+                       company_name: str = "", profile: dict | None = None) -> bytes:
     from docx import Document
     from docx.shared import Inches, Pt
 
     PUR = (79, 70, 229)
     DARK = (15, 23, 42)
     GRY = (100, 116, 139)
+    p_data = profile or {}
 
     doc = Document()
     sec = doc.sections[0]
@@ -747,6 +800,12 @@ def app_docx_graduate(title: str, content: str, applicant_name: str = "",
         r2.font.color.rgb = _rgb((210, 215, 250))
 
     doc.add_paragraph()
+
+    contact_parts = [x for x in [p_data.get("email"), p_data.get("phone"), p_data.get("location")] if x]
+    if contact_parts:
+        pc = doc.add_paragraph(); _para_space(pc, 0, 20)
+        rc = pc.add_run(_s("  ·  ".join(contact_parts)))
+        rc.font.name = "Calibri"; rc.font.size = Pt(9); rc.font.color.rgb = _rgb(GRY)
 
     p = doc.add_paragraph(); _para_space(p, 0, 80)
     info = _s(_today())
@@ -784,12 +843,14 @@ APP_DOCX_TEMPLATES = {
 
 
 def render_app_pdf(title: str, content: str, template: str = "corporate",
-                   applicant_name: str = "", company_name: str = "") -> bytes:
+                   applicant_name: str = "", company_name: str = "",
+                   profile: dict | None = None) -> bytes:
     fn = APP_PDF_TEMPLATES.get(template, app_pdf_corporate)
-    return fn(title, content, applicant_name, company_name)
+    return fn(title, content, applicant_name, company_name, profile or {})
 
 
 def render_app_docx(title: str, content: str, template: str = "corporate",
-                    applicant_name: str = "", company_name: str = "") -> bytes:
+                    applicant_name: str = "", company_name: str = "",
+                    profile: dict | None = None) -> bytes:
     fn = APP_DOCX_TEMPLATES.get(template, app_docx_corporate)
-    return fn(title, content, applicant_name, company_name)
+    return fn(title, content, applicant_name, company_name, profile or {})

@@ -52,7 +52,8 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=20)
 
-    name = _s((cv_data.get("profile") or {}).get("display_name") or "")
+    _prof = cv_data.get("profile") or {}
+    name = _s(_prof.get("full_name") or _prof.get("display_name") or "")
     title = _s((cv_data.get("master_cv") or {}).get("target_title") or "")
     summary = _s((cv_data.get("master_cv") or {}).get("summary") or "")
 
@@ -174,7 +175,8 @@ def cv_pdf_modern(cv_data: dict) -> bytes:
     pdf.set_fill_color(*NAV)
     pdf.rect(SB_X, 0, SB_W, 297, "F")
 
-    name = _s((cv_data.get("profile") or {}).get("display_name") or "")
+    _prof = cv_data.get("profile") or {}
+    name = _s(_prof.get("full_name") or _prof.get("display_name") or "")
     title_str = _s((cv_data.get("master_cv") or {}).get("target_title") or "")
     summary = _s((cv_data.get("master_cv") or {}).get("summary") or "")
 
@@ -326,7 +328,8 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=24)
 
-    name = _s((cv_data.get("profile") or {}).get("display_name") or "")
+    _prof = cv_data.get("profile") or {}
+    name = _s(_prof.get("full_name") or _prof.get("display_name") or "")
     title_str = _s((cv_data.get("master_cv") or {}).get("target_title") or "")
     summary = _s((cv_data.get("master_cv") or {}).get("summary") or "")
 
@@ -468,7 +471,8 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=26)
 
-    name = _s((cv_data.get("profile") or {}).get("display_name") or "")
+    _prof = cv_data.get("profile") or {}
+    name = _s(_prof.get("full_name") or _prof.get("display_name") or "")
     title_str = _s((cv_data.get("master_cv") or {}).get("target_title") or "")
     summary = _s((cv_data.get("master_cv") or {}).get("summary") or "")
 
@@ -610,7 +614,8 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=18)
 
-    name = _s((cv_data.get("profile") or {}).get("display_name") or "")
+    _prof = cv_data.get("profile") or {}
+    name = _s(_prof.get("full_name") or _prof.get("display_name") or "")
     title_str = _s((cv_data.get("master_cv") or {}).get("target_title") or "")
     summary = _s((cv_data.get("master_cv") or {}).get("summary") or "")
 
