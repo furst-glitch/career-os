@@ -120,6 +120,8 @@ class ApplicationAgent(BaseAgent):
             "narrative": "narrative with a cohesive career story",
         }.get(style, "professional and formal")
 
+        writing_brief = input_data.get("writing_brief", "")
+
         if language == "da":
             system = (
                 f"Du er en ekspert ansøgningsskriver. Skriv en ansøgning med {style_da} tone der:\n\n"
@@ -138,6 +140,8 @@ class ApplicationAgent(BaseAgent):
                 f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
                 f"Kandidatprofil:\n{candidate_block}"
             )
+            if writing_brief:
+                user_msg += f"\n\nSkriveguide (følg disse instruktioner præcist):\n{writing_brief}"
             if focus_areas:
                 user_msg += f"\n\nFokusér særligt på: {focus_areas}"
         else:

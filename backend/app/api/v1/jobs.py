@@ -205,7 +205,7 @@ async def quickgen(
 
     from fastapi.responses import StreamingResponse
 
-    from app.agents.application_agent import ApplicationAgent
+    from app.agents.generation_pipeline import GenerationPipeline
     from app.providers.litellm_provider import NoProviderKeyError
     from app.services.application_service import ApplicationService
 
@@ -239,10 +239,9 @@ async def quickgen(
 
         async def run_agent():
             try:
-                agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
-                # Brug fuld beskrivelse (scraped) når tilgængelig — giver bedre AI-output
+                pipeline = GenerationPipeline(user_id=user["id"], supabase=supabase)
                 full_desc = job.get("full_description") or job.get("description") or ""
-                r = await agent.run({
+                gen_input = {
                     "job_title": job.get("title", ""),
                     "job_company": job.get("company", ""),
                     "job_description": full_desc,
@@ -252,8 +251,13 @@ async def quickgen(
                     "writing_style": body.writing_style,
                     "focus_areas": body.focus_areas,
                     "doc_type": body.doc_type,
-                }, queue=queue)
-                await queue.put(("ok", r))
+                }
+                if is_cv:
+                    content = await pipeline.generate_cv(gen_input, queue=queue)
+                else:
+                    content = await pipeline.generate_application(gen_input, queue=queue)
+                from app.agents.base import AgentResult, AgentUsage
+                await queue.put(("ok", AgentResult(content=content, usage=AgentUsage())))
             except NoProviderKeyError as exc:
                 await queue.put(("no_key", str(exc)))
             except Exception as exc:

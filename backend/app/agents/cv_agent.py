@@ -148,6 +148,73 @@ Regler:
 class CVAgent(BaseAgent):
     name = "cv_agent"
 
+    async def generate(self, input_data: dict) -> AgentResult:
+        """
+        Genererer et CV-udkast til brug i GenerationPipeline (trin 1 af CV-pipeline).
+
+        input_data:
+          job_title, job_company, job_description, job_requirements
+          candidate_summary, language, writing_style, focus_areas
+        """
+        language = input_data.get("language", "da")
+        job_title = input_data.get("job_title", "")
+        job_company = input_data.get("job_company", "")
+        job_description = input_data.get("job_description", "")[:3000]
+        requirements = input_data.get("job_requirements", [])
+        candidate_summary = input_data.get("candidate_summary", "")
+        req_text = "\n".join(f"- {r}" for r in requirements[:15]) if requirements else "Ikke angivet"
+
+        if language == "da":
+            system = (
+                f"Du er en ekspert CV-skribent. Skriv et stærkt CV-udkast til stillingen {job_title} hos {job_company}.\n\n"
+                "Brug en klar, professionel struktur med disse sektioner:\n"
+                "- Profil (3-4 linjer der præcist matcher kandidaten til jobbet)\n"
+                "- Erhvervserfaring (omvendt kronologisk, bullet points med konkrete resultater)\n"
+                "- Kompetencer (kun dem der matcher jobkravene)\n"
+                "- Uddannelse\n\n"
+                "Fremhæv kompetencer og erfaringer der matcher jobkravene. "
+                "Kvantificér resultater med tal og procenter. Maks 600 ord.\n\n"
+                "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
+                "Brug IKKE markdown-formatering (ingen **, *, # eller andre symboler). Skriv ren tekst."
+            )
+            user_msg = (
+                f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
+                f"Kandidatprofil:\n{candidate_summary}"
+            )
+        else:
+            system = (
+                f"You are an expert CV writer. Write a strong CV draft for the {job_title} position at {job_company}.\n\n"
+                "Use a clear, professional structure with these sections:\n"
+                "- Profile (3-4 lines precisely matching the candidate to the job)\n"
+                "- Work Experience (reverse chronological, bullet points with concrete results)\n"
+                "- Skills (only those matching the job requirements)\n"
+                "- Education\n\n"
+                "Highlight skills and experiences matching the job requirements. "
+                "Quantify results with numbers and percentages. Max 600 words.\n\n"
+                "Do NOT use markdown formatting (no **, *, # or other symbols). Write plain text."
+            )
+            user_msg = (
+                f"Requirements:\n{req_text}\n\nJob Description:\n{job_description}\n\n"
+                f"Candidate Profile:\n{candidate_summary}"
+            )
+
+        llm = LiteLLMProvider(self.user_id)
+        response = await llm.complete(
+            self.name,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
+            temperature=0.5,
+            max_tokens=1200,
+        )
+        content = response.choices[0].message.content or ""
+        ud = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
+        usage = AgentUsage(
+            prompt_tokens=getattr(ud, "prompt_tokens", 0),
+            completion_tokens=getattr(ud, "completion_tokens", 0),
+            total_tokens=getattr(ud, "total_tokens", 0),
+            model=getattr(response, "model", "unknown"),
+        )
+        return AgentResult(content=content, usage=usage)
+
     async def run(self, input_data: dict) -> AgentResult:
         raw_text = input_data.get("raw_text", "")
         if not raw_text.strip():

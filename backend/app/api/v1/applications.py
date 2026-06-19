@@ -16,7 +16,7 @@ PUT    /applications/documents/{doc_id} - Rediger dokument-indhold
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from app.agents.application_agent import ApplicationAgent
+from app.agents.generation_pipeline import GenerationPipeline
 from app.core.deps import get_current_user, get_supabase_admin
 from app.core.rate_limit import LIMIT_APP_GEN, limiter
 from app.providers.litellm_provider import NoProviderKeyError
@@ -265,10 +265,9 @@ async def generate_cover_letter(
 
         async def run_agent():
             try:
-                agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
-                # Brug fuld beskrivelse (scraped) når tilgængelig
+                pipeline = GenerationPipeline(user_id=user["id"], supabase=supabase)
                 full_desc = job.get("full_description") or job.get("description") or ""
-                r = await agent.run({
+                gen_input = {
                     "job_title": job.get("title", ""),
                     "job_company": job.get("company", ""),
                     "job_description": full_desc,
@@ -278,8 +277,13 @@ async def generate_cover_letter(
                     "writing_style": body.writing_style,
                     "focus_areas": body.focus_areas,
                     "doc_type": body.doc_type,
-                }, queue=queue)
-                await queue.put(("ok", r))
+                }
+                if is_cv:
+                    content = await pipeline.generate_cv(gen_input, queue=queue)
+                else:
+                    content = await pipeline.generate_application(gen_input, queue=queue)
+                from app.agents.base import AgentResult, AgentUsage
+                await queue.put(("ok", AgentResult(content=content, usage=AgentUsage())))
             except NoProviderKeyError as exc:
                 await queue.put(("no_key", str(exc)))
             except Exception as exc:
