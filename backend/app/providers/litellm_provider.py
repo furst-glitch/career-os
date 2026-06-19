@@ -169,8 +169,29 @@ class LiteLLMProvider:
         if api_base:
             call_kwargs["api_base"] = api_base
 
+        # Timeout prevents hanging connections when Anthropic/OpenAI is slow.
+        # Render drops connections with TCP reset (browser "Failed to fetch") after ~30s
+        # without a response — so 25s hard limit ensures we always return a proper error.
+        call_kwargs.setdefault("timeout", 30)
+
         start = time.time()
-        response = await litellm.acompletion(**call_kwargs)
+        try:
+            response = await litellm.acompletion(**call_kwargs)
+        except Exception as exc:
+            exc_name = type(exc).__name__
+            exc_str = str(exc)
+            # AuthenticationError → bad/missing key
+            if "AuthenticationError" in exc_name or "401" in exc_str:
+                raise NoProviderKeyError(
+                    f"API-nøglen for '{resolved_provider}' er ugyldig eller udløbet."
+                )
+            # Timeout / ReadTimeout
+            if "Timeout" in exc_name or "timeout" in exc_str.lower():
+                raise TimeoutError(
+                    "AI-svaret tog for lang tid (>30 sek). Prøv igen — udbyderen er langsom lige nu."
+                )
+            # Re-raise everything else (NoProviderKeyError, BudgetExceeded, etc.)
+            raise
         self._latency_ms = int((time.time() - start) * 1000)
 
         return response

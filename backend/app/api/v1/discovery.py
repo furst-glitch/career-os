@@ -81,6 +81,7 @@ async def send_message(
       data: {"type": "chunk", "content": "..."}
       data: {"type": "done"}
       data: {"type": "error", "content": "..."}
+      : ping  (keep-alive — sendes hvert 5. sekund mens AI tænker)
     """
     if not body.message.strip():
         raise HTTPException(400, "Beskeden må ikke være tom")
@@ -95,13 +96,60 @@ async def send_message(
         raise HTTPException(400, "Sessionen er ikke aktiv")
 
     async def event_stream():
-        async for chunk in service.stream_message(session_id, body.message, user["id"]):
-            yield f"data: {chunk}\n\n"
+        import asyncio
+        import json as _json
+
+        # Queue-based keep-alive: stream_message() runs in a background task
+        # and puts chunks into a queue. The event_stream generator reads from
+        # the queue with a 5-second timeout and sends SSE ping comments while
+        # waiting. This avoids the asyncio.wait_for/CancelledError problem
+        # that would otherwise kill the async generator prematurely.
+        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+        async def producer():
+            try:
+                async for chunk in service.stream_message(session_id, body.message, user["id"]):
+                    await queue.put(("data", chunk))
+            except asyncio.CancelledError:
+                pass  # Client disconnected — stop silently
+            except Exception as exc:
+                try:
+                    await queue.put(("error", _json.dumps({"type": "error", "content": f"Stream fejl: {exc}"})))
+                except Exception:
+                    pass
+            finally:
+                try:
+                    queue.put_nowait(("done", ""))  # Non-blocking; avoids awaiting in finally
+                except asyncio.QueueFull:
+                    pass
+
+        task = asyncio.create_task(producer())
+        try:
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    # Still waiting for LLM — send SSE comment to keep connection open
+                    yield ": ping\n\n"
+                    continue
+                if kind == "done":
+                    break
+                yield f"data: {payload}\n\n"
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"X-Accel-Buffering": "no"},
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
     )
 
 
