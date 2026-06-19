@@ -69,7 +69,7 @@ async def create_job(
     try:
         snap = _snapshot(user["id"], supabase)
         if snap:
-            result = svc.compute_match_score(job, snap)
+            result = await svc.compute_match_score(job, snap)
             svc.store_match_score(job["id"], result["total"])
             job["match_score"] = result["total"]
             job["match_breakdown"] = result
@@ -110,7 +110,7 @@ async def update_job(
         try:
             snap = _snapshot(user["id"], supabase)
             if snap:
-                result = svc.compute_match_score(job, snap)
+                result = await svc.compute_match_score(job, snap)
                 svc.store_match_score(job_id, result["total"])
                 job["match_score"] = result["total"]
         except Exception:
@@ -169,7 +169,7 @@ async def get_match_score(
     if not job:
         raise HTTPException(status_code=404, detail="Job ikke fundet")
     snap = _snapshot(user["id"], supabase)
-    result = svc.compute_match_score(job, snap)
+    result = await svc.compute_match_score(job, snap)
     svc.store_match_score(job_id, result["total"])
     await cache.set(ck, result, ttl=TTL_MATCH)
     return result
