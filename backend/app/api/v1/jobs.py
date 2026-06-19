@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.core.deps import get_current_user, get_supabase_admin
 from app.services.automation_service import on_job_saved
+from app.services.cache_service import TTL_MATCH, get_cache, key_match
 from app.services.job_service import JobService
 from app.services.memory_snapshot_service import MemorySnapshotService
 
@@ -155,6 +156,13 @@ async def get_match_score(
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
+    cache = get_cache()
+    ck = key_match(user["id"], job_id)
+
+    cached = await cache.get(ck)
+    if cached:
+        return cached
+
     svc = _svc(supabase)
     job = svc.get_job(job_id, user["id"])
     if not job:
@@ -162,4 +170,5 @@ async def get_match_score(
     snap = _snapshot(user["id"], supabase)
     result = svc.compute_match_score(job, snap)
     svc.store_match_score(job_id, result["total"])
+    await cache.set(ck, result, ttl=TTL_MATCH)
     return result

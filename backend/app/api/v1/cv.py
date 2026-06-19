@@ -8,11 +8,12 @@ POST /cv/master/generate      Generer Master CV (SSE streaming)
 """
 import os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agents.cv_agent import CVAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.core.rate_limit import LIMIT_UPLOAD, limiter
 from app.services.automation_service import on_cv_uploaded
 from app.services.cv_service import CVService, extract_text
 from app.services.discovery_service import DiscoveryService
@@ -35,9 +36,11 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 @router.post("/upload")
+@limiter.limit(LIMIT_UPLOAD)
 async def upload_cv(
+    request: Request,
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):

@@ -13,11 +13,12 @@ POST   /applications/{id}/generate      - Generer cover letter med AI
 GET    /applications/documents/{doc_id} - Hent dokument-indhold
 PUT    /applications/documents/{doc_id} - Rediger dokument-indhold
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.agents.application_agent import ApplicationAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.core.rate_limit import LIMIT_APP_GEN, limiter
 from app.providers.litellm_provider import NoProviderKeyError
 from app.services.application_service import ApplicationService
 from app.services.memory_snapshot_service import MemorySnapshotService
@@ -196,7 +197,9 @@ async def add_document(
 # ── AI Cover Letter Generation ────────────────────────────────────────────────
 
 @router.post("/{pipeline_id}/generate")
+@limiter.limit(LIMIT_APP_GEN)
 async def generate_cover_letter(
+    request: Request,
     pipeline_id: str,
     body: GenerateCoverLetterRequest,
     user=Depends(get_current_user),

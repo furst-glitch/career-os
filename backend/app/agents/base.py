@@ -1,6 +1,10 @@
+import logging
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger("app.agents")
 
 
 @dataclass
@@ -67,6 +71,33 @@ class BaseAgent(ABC):
             "latency_ms": usage.latency_ms,
             "used_user_key": used_user_key,
         }).execute()
+
+    async def run_tracked(self, input_data: dict) -> AgentResult:
+        """Wraps run() with timing + Sentry error tracking."""
+        start = time.monotonic()
+        try:
+            result = await self.run(input_data)
+            ms = round((time.monotonic() - start) * 1000)
+            logger.info(
+                "Agent %s completed in %dms (tokens=%d)",
+                self.name, ms, result.usage.total_tokens,
+            )
+            return result
+        except Exception as exc:
+            ms = round((time.monotonic() - start) * 1000)
+            logger.error(
+                "Agent %s FAILED after %dms: %s",
+                self.name, ms, exc,
+            )
+            try:
+                import sentry_sdk
+                with sentry_sdk.push_scope() as scope:
+                    scope.set_tag("agent", self.name)
+                    scope.set_user({"id": self.user_id})
+                    sentry_sdk.capture_exception(exc)
+            except ImportError:
+                pass
+            raise
 
     @abstractmethod
     async def run(self, input_data: dict) -> AgentResult:

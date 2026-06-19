@@ -4,6 +4,11 @@ Memory Snapshot Engine — samler al brugerspecifik viden til et agent-optimeret
 Standardinput til:
   Career Coach Agent · Application Agent · Job Agent
   Salary Agent · Interview Agent · Review Board
+
+Cache-strategi:
+  L1 = process-level dict (0ms, same-process only)
+  L2 = Redis sync (1-2ms, shared across Render instances)
+  L3 = Supabase DB (50-200ms, always authoritative)
 """
 from __future__ import annotations
 
@@ -13,10 +18,14 @@ from datetime import datetime, timezone
 from supabase import Client
 
 from app.services.memory_service import MemoryService
+from app.services.cache_service import (
+    TTL_SNAPSHOT,
+    get_sync_cache,
+    key_snapshot,
+)
 
-# Process-level TTL cache: {user_id: (snapshot_dict, expires_at_ts)}
-_SNAPSHOT_CACHE: dict[str, tuple[dict, float]] = {}
-_CACHE_TTL_SECONDS = 300  # 5 minutes
+# L1: process-level dict  {user_id: (snapshot, expires_monotonic)}
+_L1: dict[str, tuple[dict, float]] = {}
 
 
 class MemorySnapshotService:
@@ -25,18 +34,31 @@ class MemorySnapshotService:
         self.mem = MemoryService(supabase)
 
     def invalidate(self, user_id: str) -> None:
-        _SNAPSHOT_CACHE.pop(user_id, None)
+        """Purge L1 + L2 cache for this user."""
+        _L1.pop(user_id, None)
+        rc = get_sync_cache()
+        if rc:
+            rc.delete_pattern(f"snapshot:{user_id}*")
 
     def snapshot(self, user_id: str, force: bool = False) -> dict:
-        """Returner komplet, agent-optimeret snapshot af brugerens karriereviden.
-        Cached for _CACHE_TTL_SECONDS. Pass force=True to bypass cache."""
+        """Return career snapshot — L1 → L2 (Redis) → DB fallback."""
         now = time.monotonic()
-        if not force and user_id in _SNAPSHOT_CACHE:
-            cached, expires = _SNAPSHOT_CACHE[user_id]
-            if now < expires:
+
+        # L1 hit
+        if not force:
+            l1 = _L1.get(user_id)
+            if l1 and now < l1[1]:
+                return l1[0]
+
+        # L2 hit (Redis)
+        rc = get_sync_cache()
+        if not force and rc:
+            cached = rc.get(key_snapshot(user_id))
+            if cached:
+                _L1[user_id] = (cached, now + TTL_SNAPSHOT)  # warm L1
                 return cached
 
-        """Returner komplet, agent-optimeret snapshot af brugerens karriereviden."""
+        # L3: full DB fetch
         mcv_id = self._mcv_id(user_id)
 
         profile     = self._profile(user_id, mcv_id)
@@ -61,11 +83,13 @@ class MemorySnapshotService:
             "milestones":   milestones,
             "preferences":  preferences,
             "recent_memories": memories,
-            # Kompakt tekstrepræsentation til prompt-injection
             "text_summary": self._text_summary(profile, experience, skills, goals, preferences, milestones),
         }
-        # Store in cache
-        _SNAPSHOT_CACHE[user_id] = (result, now + _CACHE_TTL_SECONDS)
+
+        # Populate L2 (Redis) then L1
+        if rc:
+            rc.set(key_snapshot(user_id), result, ttl=TTL_SNAPSHOT)
+        _L1[user_id] = (result, now + TTL_SNAPSHOT)
         return result
 
     # ─── Private helpers ──────────────────────────────────────────────────────

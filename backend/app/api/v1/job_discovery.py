@@ -11,12 +11,14 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.agents.job_discovery_agent import JobDiscoveryAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.core.rate_limit import LIMIT_DISCOVERY, limiter
 from app.services.automation_service import on_job_discovered
+from app.services.cache_service import TTL_DISCOVERY, get_cache, key_discovery
 from app.services.job_discovery_service import JobDiscoveryService
 from app.services.job_sources import DEFAULT_SOURCES, SOURCES
 
@@ -38,11 +40,21 @@ class SaveRequest(BaseModel):
 
 
 @router.post("/search")
+@limiter.limit(LIMIT_DISCOVERY)
 async def search_jobs(
+    request: Request,
     body: SearchRequest,
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
+    cache = get_cache()
+    ck = key_discovery(user["id"], body.query, body.location)
+
+    cached = await cache.get(ck)
+    if cached:
+        logger.info("Discovery cache HIT for user %s", user["id"][:8])
+        return cached
+
     svc = JobDiscoveryService(supabase)
     data = await svc.search(
         user_id=user["id"],
@@ -68,6 +80,7 @@ async def search_jobs(
         except Exception as exc:
             logger.warning("AI enrichment skipped: %s", exc)
 
+    await cache.set(ck, data, ttl=TTL_DISCOVERY)
     return data
 
 

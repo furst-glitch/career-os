@@ -1,4 +1,10 @@
 services:
+  - type: redis
+    name: careeros-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []   # allow all from Render network
+
   - type: web
     name: careeros-api
     runtime: python
@@ -25,6 +31,13 @@ services:
       # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
       - key: ENCRYPTION_KEY
         sync: false
+
+      # Redis — sættes automatisk af Render hvis du linker careeros-redis
+      - key: REDIS_URL
+        fromService:
+          name: careeros-redis
+          type: redis
+          property: connectionString
 
       # CORS — sæt til din frontend URL, f.eks. ["https://careeros.vercel.app"]
       - key: CORS_ORIGINS

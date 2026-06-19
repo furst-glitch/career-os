@@ -6,12 +6,14 @@ POST /career-coach/skills-gap  - Kompetencegab-analyse
 POST /career-coach/career-path - Karrierevej-analyse
 POST /career-coach/next-steps  - Næste skridt (30 dage)
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.agents.career_coach_agent import CareerCoachAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.core.rate_limit import LIMIT_COACH, limiter
 from app.providers.litellm_provider import NoProviderKeyError
+from app.services.cache_service import TTL_COACH, get_cache, key_coach
 from app.services.memory_snapshot_service import MemorySnapshotService
 
 router = APIRouter(prefix="/career-coach", tags=["Career Coach"])
@@ -32,6 +34,13 @@ async def _run_analysis(
     target_role: str | None = None,
     language: str = "da",
 ) -> dict:
+    cache = get_cache()
+    ck = key_coach(user["id"], f"{analysis_type}:{language}:{target_role or ''}", question)
+
+    cached = await cache.get(ck)
+    if cached:
+        return cached
+
     snapshot_svc = MemorySnapshotService(supabase)
     snapshot = snapshot_svc.snapshot(user["id"])
     text_summary = snapshot.get("text_summary", "")
@@ -63,7 +72,7 @@ async def _run_analysis(
     except Exception as exc:
         raise HTTPException(500, f"Analyse fejlede: {exc}")
 
-    return {
+    response = {
         "content": result.content,
         "analysis_type": analysis_type,
         "language": language,
@@ -74,10 +83,14 @@ async def _run_analysis(
             "goals_count": len(snapshot.get("goals") or []),
         },
     }
+    await cache.set(ck, response, ttl=TTL_COACH)
+    return response
 
 
 @router.post("/analyze")
+@limiter.limit(LIMIT_COACH)
 async def analyze(
+    request: Request,
     body: CoachRequest,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -93,7 +106,9 @@ async def analyze(
 
 
 @router.post("/skills-gap")
+@limiter.limit(LIMIT_COACH)
 async def skills_gap(
+    request: Request,
     body: CoachRequest,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -102,7 +117,9 @@ async def skills_gap(
 
 
 @router.post("/career-path")
+@limiter.limit(LIMIT_COACH)
 async def career_path(
+    request: Request,
     body: CoachRequest,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -111,7 +128,9 @@ async def career_path(
 
 
 @router.post("/next-steps")
+@limiter.limit(LIMIT_COACH)
 async def next_steps(
+    request: Request,
     body: CoachRequest,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),

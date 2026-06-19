@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
+    # Redis — valgfri; in-memory fallback bruges hvis ikke sat
+    redis_url: str | None = None
+
+    # Sentry
+    sentry_dsn: str | None = None
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
     # Regex for dynamiske origins — dækker alle Vercel preview-deployments automatisk

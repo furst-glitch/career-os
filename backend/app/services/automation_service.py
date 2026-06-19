@@ -61,12 +61,15 @@ async def on_job_saved(user_id: str, job_id: str, supabase) -> None:
 async def on_cv_uploaded(user_id: str, supabase) -> None:
     """
     Triggered after a CV upload completes.
-    Refreshes the Career Memory snapshot in the background.
+    Invalidates stale cache, then refreshes the Career Memory snapshot.
     """
     try:
+        from app.services.cache_service import invalidate_user
+        await invalidate_user(user_id)  # Purge Redis + L1
+
         from app.services.memory_snapshot_service import MemorySnapshotService
         snap_svc = MemorySnapshotService(supabase)
-        snap_svc.snapshot(user_id)  # Recomputes + caches
+        snap_svc.snapshot(user_id, force=True)  # Pre-warm L1 + L2
 
         _emit_notification(supabase, user_id, "cv_uploaded",
                            "CV analyseret", "Karriere Memory opdateret automatisk")
