@@ -48,6 +48,19 @@ interface Document {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  // Pipeline 2.0
+  fundet:               { label: "Fundet",              color: "bg-slate-100 text-slate-600" },
+  gemt:                 { label: "Gemt",                color: "bg-slate-100 text-slate-700" },
+  cv_genereret:         { label: "CV genereret",        color: "bg-sky-100 text-sky-700" },
+  ansoegning_genereret: { label: "Ansøgning genereret", color: "bg-blue-100 text-blue-700" },
+  ansoegt:              { label: "Ansøgt",              color: "bg-violet-100 text-violet-700" },
+  samtale_1:            { label: "Samtale 1",           color: "bg-purple-100 text-purple-700" },
+  samtale_2:            { label: "Samtale 2",           color: "bg-fuchsia-100 text-fuchsia-700" },
+  case_stadie:          { label: "Case",                color: "bg-amber-100 text-amber-700" },
+  tilbud:               { label: "Tilbud",              color: "bg-green-100 text-green-700" },
+  ansat:                { label: "Ansat!",              color: "bg-green-200 text-green-800" },
+  afslag:               { label: "Afslag",              color: "bg-red-100 text-red-600" },
+  // Pipeline 1.0 (bagudkompatibilitet)
   draft:        { label: "Kladde",       color: "bg-slate-100 text-slate-600" },
   preparing:    { label: "Forbereder",   color: "bg-blue-100 text-blue-700" },
   ready:        { label: "Klar",         color: "bg-indigo-100 text-indigo-700" },
@@ -68,9 +81,15 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 const STATUS_ORDER = [
+  "fundet", "gemt", "cv_genereret", "ansoegning_genereret",
+  "ansoegt", "samtale_1", "samtale_2", "case_stadie",
+  "tilbud", "ansat", "afslag",
+  // Pipeline 1.0
   "draft", "preparing", "ready", "submitted",
   "screening", "interviewing", "offer", "hired", "rejected", "withdrawn",
 ];
+
+const INTERVIEW_STATUSES = new Set(["samtale_1", "samtale_2"]);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/v1\/?$/, "")}/api/v1`
@@ -350,6 +369,105 @@ function CoverLetterModal({
   );
 }
 
+// ── Interview Prep Modal ──────────────────────────────────────────────────────
+
+function InterviewPrepModal({ app, onClose }: { app: Application; onClose: () => void }) {
+  const [content, setContent] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeStatus, setActiveStatus] = useState(
+    INTERVIEW_STATUSES.has(app.current_status) ? app.current_status : "samtale_1"
+  );
+
+  async function loadPrep(status: string) {
+    setLoading(true);
+    setError(null);
+    setContent("");
+    try {
+      const res = await apiGet<{ preps: Array<{ content: string; status: string }> }>(
+        `/applications/${app.id}/interview-prep?status=${status}`
+      );
+      if (res.preps.length > 0) {
+        setContent(res.preps[0].content);
+      } else {
+        // Trigger generation
+        const gen = await apiPost<{ content: string }>(`/applications/${app.id}/interview-prep`, {});
+        setContent(gen.content || "Ingen forberedelse genereret endnu.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Kunne ikke hente interviewforberedelse";
+      if (msg.includes("402") || msg.includes("no_api_key")) {
+        setError("Ingen API-nøgle konfigureret — gå til Indstillinger → AI-udbydere.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadPrep(activeStatus); }, [activeStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex h-[92vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Interviewforberedelse</h2>
+            <p className="text-sm text-slate-500">{app.jobs?.title} hos {app.jobs?.company}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex gap-2 border-b border-slate-100 px-6 py-3">
+          {(["samtale_1", "samtale_2"] as const).map(s => (
+            <button
+              key={s}
+              onClick={() => setActiveStatus(s)}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeStatus === s ? "bg-blue-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {STATUS_CONFIG[s]?.label ?? s}
+            </button>
+          ))}
+          <button
+            onClick={() => loadPrep(activeStatus)}
+            className="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50"
+          >
+            Regenerér
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto px-6 py-4">
+          {loading ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <svg className="mx-auto mb-3 h-8 w-8 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                <p className="text-sm text-slate-500">Genererer interviewforberedelse…</p>
+                <p className="mt-1 text-xs text-slate-400">Analyserer job og din profil</p>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+          ) : (
+            <div className="prose prose-sm max-w-none">
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-800">{content}</pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Application Card ──────────────────────────────────────────────────────────
 
 function ApplicationCard({
@@ -357,18 +475,23 @@ function ApplicationCard({
   onStatusChange,
   onDelete,
   onGenerateCoverLetter,
+  onInterviewPrep,
 }: {
   app: Application;
   onStatusChange: (id: string, status: string) => void;
   onDelete: (id: string) => void;
   onGenerateCoverLetter: (app: Application) => void;
+  onInterviewPrep: (app: Application) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  const nextStatuses = STATUS_ORDER.filter(s => s !== app.current_status).slice(0, 4);
+  const nextStatuses = STATUS_ORDER.filter(s => s !== app.current_status).slice(0, 6);
+  const isInterview = INTERVIEW_STATUSES.has(app.current_status);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-blue-200 transition-colors">
+    <div className={`rounded-xl border bg-white p-4 shadow-sm transition-colors ${
+      isInterview ? "border-purple-200 hover:border-purple-300" : "border-slate-200 hover:border-blue-200"
+    }`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -378,9 +501,7 @@ function ApplicationCard({
           </div>
           <h3 className="font-semibold text-slate-900 truncate">{app.jobs?.title ?? "Ukendt stilling"}</h3>
           <p className="text-sm text-slate-500">{app.jobs?.company}</p>
-          {app.jobs?.location && (
-            <p className="text-xs text-slate-400">{app.jobs.location}</p>
-          )}
+          {app.jobs?.location && <p className="text-xs text-slate-400">{app.jobs.location}</p>}
           {app.deadline && (
             <p className="text-xs text-orange-600 mt-1">
               Deadline: {new Date(app.deadline).toLocaleDateString("da-DK")}
@@ -388,7 +509,15 @@ function ApplicationCard({
           )}
         </div>
 
-        <div className="flex shrink-0 gap-1.5">
+        <div className="flex shrink-0 flex-col gap-1.5">
+          {isInterview && (
+            <button
+              onClick={() => onInterviewPrep(app)}
+              className="rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 transition-colors"
+            >
+              Interview-prep
+            </button>
+          )}
           <button
             onClick={() => onGenerateCoverLetter(app)}
             className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
@@ -397,7 +526,7 @@ function ApplicationCard({
           </button>
           <button
             onClick={() => setExpanded(e => !e)}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+            className="self-end rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d={expanded ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6"}/>
@@ -408,9 +537,7 @@ function ApplicationCard({
 
       {expanded && (
         <div className="mt-3 border-t border-slate-100 pt-3 space-y-3">
-          {app.notes && (
-            <p className="text-xs text-slate-600">{app.notes}</p>
-          )}
+          {app.notes && <p className="text-xs text-slate-600">{app.notes}</p>}
 
           <div>
             <p className="mb-1.5 text-xs font-medium text-slate-500">Skift status:</p>
@@ -461,9 +588,9 @@ function AddApplicationModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiGet<{ jobs: JobOption[] }>("/jobs").then(r => {
-      // Only jobs without existing pipeline entry
-      const available = (r.jobs || []).filter((j: JobOption) => !j.pipeline_id);
+    // GET /jobs returns a raw array (not { jobs: [...] })
+    apiGet<JobOption[]>("/jobs").then(r => {
+      const available = (r || []).filter((j: JobOption) => !j.pipeline_id);
       setJobs(available);
     });
   }, []);
@@ -576,7 +703,11 @@ const FILTER_TABS = [
   { key: "rejected", label: "Afvist" },
 ];
 
-const ACTIVE_STATUSES = new Set(["draft", "preparing", "ready", "submitted", "screening", "interviewing", "offer"]);
+const ACTIVE_STATUSES = new Set([
+  "draft", "preparing", "ready", "submitted", "screening", "interviewing", "offer",
+  "fundet", "gemt", "cv_genereret", "ansoegning_genereret", "ansoegt",
+  "samtale_1", "samtale_2", "case_stadie", "tilbud",
+]);
 
 export default function ApplicationsPage() {
   const [applications, setApplications] = useState<Application[]>([]);
@@ -584,6 +715,7 @@ export default function ApplicationsPage() {
   const [filter, setFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
   const [coverLetterApp, setCoverLetterApp] = useState<Application | null>(null);
+  const [interviewPrepApp, setInterviewPrepApp] = useState<Application | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -618,8 +750,12 @@ export default function ApplicationsPage() {
   const stats = {
     total: applications.length,
     active: applications.filter(a => ACTIVE_STATUSES.has(a.current_status)).length,
-    interviews: applications.filter(a => ["screening", "interviewing"].includes(a.current_status)).length,
-    offers: applications.filter(a => ["offer", "hired"].includes(a.current_status)).length,
+    interviews: applications.filter(a =>
+      ["screening", "interviewing", "samtale_1", "samtale_2", "case_stadie"].includes(a.current_status)
+    ).length,
+    offers: applications.filter(a =>
+      ["offer", "hired", "tilbud", "ansat"].includes(a.current_status)
+    ).length,
   };
 
   if (loading) {
@@ -701,7 +837,8 @@ export default function ApplicationsPage() {
               app={app}
               onStatusChange={handleStatusChange}
               onDelete={handleDelete}
-              onGenerateCoverLetter={app => setCoverLetterApp(app)}
+              onGenerateCoverLetter={a => setCoverLetterApp(a)}
+              onInterviewPrep={a => setInterviewPrepApp(a)}
             />
           ))}
         </div>
@@ -718,6 +855,12 @@ export default function ApplicationsPage() {
         <CoverLetterModal
           app={coverLetterApp}
           onClose={() => setCoverLetterApp(null)}
+        />
+      )}
+      {interviewPrepApp && (
+        <InterviewPrepModal
+          app={interviewPrepApp}
+          onClose={() => setInterviewPrepApp(null)}
         />
       )}
     </div>

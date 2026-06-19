@@ -26,9 +26,16 @@ from app.services.memory_snapshot_service import MemorySnapshotService
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
 VALID_STATUSES = {
+    # Pipeline 1.0 (bevaret for bagudkompatibilitet)
     "draft", "preparing", "ready", "submitted",
     "screening", "interviewing", "offer", "rejected", "withdrawn", "hired",
+    # Pipeline 2.0
+    "fundet", "gemt", "cv_genereret", "ansoegning_genereret",
+    "ansoegt", "samtale_1", "samtale_2", "case_stadie",
+    "tilbud", "ansat", "afslag",
 }
+
+INTERVIEW_STATUSES = {"samtale_1", "samtale_2"}
 VALID_PRIORITIES = {"low", "medium", "high", "dream"}
 
 
@@ -135,7 +142,18 @@ async def update_application(
     if body.priority and body.priority not in VALID_PRIORITIES:
         raise HTTPException(400, f"Ugyldig prioritet: {body.priority}")
     data = {k: v for k, v in body.model_dump().items() if v is not None}
-    return svc.update_pipeline(user["id"], pipeline_id, data)
+    updated = svc.update_pipeline(user["id"], pipeline_id, data)
+
+    # Auto-generer interviewforberedelse ved samtale 1 og 2
+    if body.current_status in INTERVIEW_STATUSES:
+        from fastapi import BackgroundTasks
+        from app.services.interview_prep_service import generate_interview_prep
+        import asyncio
+        asyncio.create_task(
+            generate_interview_prep(user["id"], pipeline_id, body.current_status, supabase)
+        )
+
+    return updated
 
 
 # ── Delete ────────────────────────────────────────────────────────────────────
@@ -299,3 +317,44 @@ async def update_document(
     if not doc:
         raise HTTPException(404, "Dokument ikke fundet")
     return svc.update_document_content(user["id"], document_id, body.content, body.title)
+
+
+# ── Interview Preparation ─────────────────────────────────────────────────────
+
+@router.get("/{pipeline_id}/interview-prep")
+async def get_interview_prep(
+    pipeline_id: str,
+    status: str | None = None,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """Hent interviewforberedelse for en ansøgning."""
+    svc = ApplicationService(supabase)
+    app = svc.get_pipeline(user["id"], pipeline_id)
+    if not app:
+        raise HTTPException(404, "Ansøgning ikke fundet")
+    q = supabase.table("interview_prep").select("*").eq("pipeline_id", pipeline_id).eq("user_id", user["id"])
+    if status:
+        q = q.eq("status", status)
+    result = q.order("generated_at", desc=True).execute()
+    return {"preps": result.data or []}
+
+
+@router.post("/{pipeline_id}/interview-prep")
+async def trigger_interview_prep(
+    pipeline_id: str,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """Manuel trigger af interviewforberedelse (kræver status samtale_1 eller samtale_2)."""
+    svc = ApplicationService(supabase)
+    app = svc.get_pipeline(user["id"], pipeline_id)
+    if not app:
+        raise HTTPException(404, "Ansøgning ikke fundet")
+    status = app.get("current_status", "")
+    if status not in INTERVIEW_STATUSES:
+        raise HTTPException(400, f"Interviewforberedelse kræver status samtale_1 eller samtale_2 (nuværende: {status})")
+
+    from app.services.interview_prep_service import generate_interview_prep
+    content = await generate_interview_prep(user["id"], pipeline_id, status, supabase)
+    return {"content": content, "status": status}

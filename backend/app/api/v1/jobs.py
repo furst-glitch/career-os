@@ -11,6 +11,7 @@ POST   /jobs/{id}/save        — toggle is_saved
 GET    /jobs/{id}/match       — beregn frisk match score
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from app.core.deps import get_current_user, get_supabase_admin
 from app.services.automation_service import on_job_saved
@@ -172,3 +173,114 @@ async def get_match_score(
     svc.store_match_score(job_id, result["total"])
     await cache.set(ck, result, ttl=TTL_MATCH)
     return result
+
+
+# ── Quick Generate (CV eller ansøgning direkte fra job-card) ──────────────────
+
+class QuickGenRequest(BaseModel):
+    doc_type: str = "cover_letter"  # "cover_letter" | "cv"
+    language: str = "da"
+    writing_style: str = "professional"
+    focus_areas: str | None = None
+
+
+@router.post("/{job_id}/quickgen")
+async def quickgen(
+    job_id: str,
+    body: QuickGenRequest,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    Generer et dokument (CV eller ansøgning) direkte fra et job-kort.
+    Opretter automatisk en pipeline-entry hvis den ikke eksisterer.
+    Returnerer: { document_id, content, pipeline_id, pipeline_status }
+    """
+    from app.services.application_service import ApplicationService
+    from app.agents.application_agent import ApplicationAgent
+    from app.providers.litellm_provider import NoProviderKeyError
+
+    if body.doc_type not in ("cover_letter", "cv"):
+        raise HTTPException(400, "doc_type skal være 'cover_letter' eller 'cv'")
+
+    svc = _svc(supabase)
+    job = svc.get_job(job_id, user["id"])
+    if not job:
+        raise HTTPException(404, "Job ikke fundet")
+
+    app_svc = ApplicationService(supabase)
+
+    # Find eller opret pipeline-entry
+    pipeline_id = job.get("pipeline_id")
+    if not pipeline_id:
+        new_entry = app_svc.create_pipeline(user["id"], job_id, {
+            "status": "gemt",
+            "priority": "medium",
+        })
+        pipeline_id = new_entry["id"]
+
+    # Hent karriere-snapshot
+    snapshot = _snapshot(user["id"], supabase)
+    candidate_summary = snapshot.get("text_summary", "")
+
+    agent = ApplicationAgent(user_id=user["id"], supabase=supabase)
+
+    try:
+        if body.doc_type == "cv":
+            result = await agent.run({
+                "job_title": job.get("title", ""),
+                "job_company": job.get("company", ""),
+                "job_description": job.get("description", ""),
+                "job_requirements": job.get("requirements", []),
+                "candidate_summary": candidate_summary,
+                "language": body.language,
+                "writing_style": body.writing_style,
+                "focus_areas": body.focus_areas,
+                "doc_type": "cv",
+            })
+            new_status = "cv_genereret"
+            title = f"CV — {job.get('title')} hos {job.get('company')}"
+        else:
+            result = await agent.run({
+                "job_title": job.get("title", ""),
+                "job_company": job.get("company", ""),
+                "job_description": job.get("description", ""),
+                "job_requirements": job.get("requirements", []),
+                "candidate_summary": candidate_summary,
+                "language": body.language,
+                "writing_style": body.writing_style,
+                "focus_areas": body.focus_areas,
+                "doc_type": "cover_letter",
+            })
+            new_status = "ansoegning_genereret"
+            title = f"Ansøgning — {job.get('title')} hos {job.get('company')}"
+    except NoProviderKeyError as exc:
+        raise HTTPException(
+            402,
+            detail={
+                "error": "no_api_key",
+                "message": str(exc),
+                "action": "Tilføj din API-nøgle under Indstillinger → AI-udbydere",
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"AI-generering fejlede: {exc}")
+
+    doc = app_svc.save_cover_letter(
+        user_id=user["id"],
+        pipeline_id=pipeline_id,
+        title=title,
+        content=result.content,
+        language=body.language,
+    )
+
+    # Opdater pipeline-status
+    app_svc.update_pipeline(user["id"], pipeline_id, {"current_status": new_status})
+
+    return {
+        "document_id": doc["id"],
+        "title": title,
+        "content": result.content,
+        "pipeline_id": pipeline_id,
+        "pipeline_status": new_status,
+    }

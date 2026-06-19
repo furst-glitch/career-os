@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { apiPost, apiGet, apiStream } from "@/lib/api";
+// apiStream only used for sendMessage — welcome uses static message to avoid cold-start hangs
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CompletenessScore } from "@/components/CompletenessScore";
@@ -11,10 +12,6 @@ import { cn } from "@/lib/utils";
 interface StartResult {
   session_id: string;
   status: "created" | "resumed";
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-}
-
-interface MessagesResult {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
@@ -46,7 +43,6 @@ export default function InterviewPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [streamingWelcome, setStreamingWelcome] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scoreRefresh, setScoreRefresh] = useState(0);
 
@@ -67,71 +63,30 @@ export default function InterviewPage() {
       setSessionId(result.session_id);
 
       if (result.status === "resumed" && result.messages.length > 0) {
-        // Genoptag eksisterende session
         setMessages(result.messages.map((m) => ({ role: m.role, content: m.content })));
       } else if (result.status === "resumed") {
-        // Session eksisterer men ingen beskeder endnu — hent fra API
         try {
-          const hist = await apiGet<MessagesResult>(`/discovery/${result.session_id}/messages`);
+          const hist = await apiGet<{ messages: Array<{ role: "user" | "assistant"; content: string }> }>(
+            `/discovery/${result.session_id}/messages`
+          );
           if (hist.messages.length > 0) {
             setMessages(hist.messages.map((m) => ({ role: m.role, content: m.content })));
           } else {
-            await streamWelcome(result.session_id);
+            setMessages([STATIC_WELCOME]);
           }
         } catch {
-          await streamWelcome(result.session_id);
+          setMessages([STATIC_WELCOME]);
         }
       } else {
-        // Ny session — stream velkomstbesked fra AI
-        await streamWelcome(result.session_id);
+        setMessages([STATIC_WELCOME]);
       }
 
-      // Hent session-status (gaps osv.)
       loadStatus(result.session_id);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Kunne ikke starte interview."
-      );
+      setError(err instanceof Error ? err.message : "Kunne ikke starte interview.");
+      setMessages([STATIC_WELCOME]);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function streamWelcome(sid: string) {
-    const welcomeMsg: ChatMessage = { role: "assistant", content: "", streaming: true };
-    setMessages([welcomeMsg]);
-    setStreamingWelcome(true);
-
-    try {
-      await apiStream(
-        `/discovery/${sid}/welcome`,
-        {},
-        (chunk) => {
-          setMessages((prev) =>
-            prev.map((m, i) =>
-              i === prev.length - 1 ? { ...m, content: m.content + chunk } : m
-            )
-          );
-        },
-        () => {
-          setMessages((prev) =>
-            prev.map((m, i) =>
-              i === prev.length - 1 ? { ...m, streaming: false } : m
-            )
-          );
-          setStreamingWelcome(false);
-        },
-        (errMsg) => {
-          // AI fejl — vis statisk velkomst i stedet
-          setMessages([STATIC_WELCOME]);
-          setStreamingWelcome(false);
-          console.warn("Welcome stream error:", errMsg);
-        }
-      );
-    } catch {
-      // Fallback til statisk velkomst
-      setMessages([STATIC_WELCOME]);
-      setStreamingWelcome(false);
     }
   }
 
@@ -145,7 +100,7 @@ export default function InterviewPage() {
   }
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || !sessionId || sending || streamingWelcome) return;
+    if (!input.trim() || !sessionId || sending) return;
 
     const userMsg = input.trim();
     setInput("");
@@ -191,7 +146,7 @@ export default function InterviewPage() {
       setSending(false);
       textareaRef.current?.focus();
     }
-  }, [input, sessionId, sending, streamingWelcome, scoreRefresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input, sessionId, sending]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -335,20 +290,16 @@ export default function InterviewPage() {
               <Textarea
                 ref={textareaRef}
                 rows={3}
-                placeholder={
-                  streamingWelcome
-                    ? "Vent på AI…"
-                    : "Skriv dit svar… (Enter sender, Shift+Enter = ny linje)"
-                }
+                placeholder="Skriv dit svar… (Enter sender, Shift+Enter = ny linje)"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={sending || streamingWelcome}
+                disabled={sending}
                 className="flex-1"
               />
               <Button
                 onClick={sendMessage}
-                disabled={!input.trim() || sending || streamingWelcome}
+                disabled={!input.trim() || sending}
                 loading={sending}
                 className="self-end px-5"
               >

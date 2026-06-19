@@ -34,12 +34,31 @@ const EMPTY_FORM = {
 type FormState = typeof EMPTY_FORM;
 
 const STATUS_LABELS: Record<string, string> = {
+  // Pipeline 2.0
+  fundet: "Fundet", gemt: "Gemt",
+  cv_genereret: "CV genereret", ansoegning_genereret: "Ansøgning genereret",
+  ansoegt: "Ansøgt", samtale_1: "Samtale 1", samtale_2: "Samtale 2",
+  case_stadie: "Case", tilbud: "Tilbud", ansat: "Ansat", afslag: "Afslag",
+  // Pipeline 1.0
   draft: "Kladde", preparing: "Forbereder", ready: "Klar",
   submitted: "Indsendt", screening: "Screening", interviewing: "Interview",
   offer: "Tilbud", rejected: "Afvist", withdrawn: "Trukket", hired: "Ansat",
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  // Pipeline 2.0
+  fundet: "bg-slate-100 text-slate-600",
+  gemt: "bg-slate-100 text-slate-700",
+  cv_genereret: "bg-sky-100 text-sky-700",
+  ansoegning_genereret: "bg-blue-100 text-blue-700",
+  ansoegt: "bg-violet-100 text-violet-700",
+  samtale_1: "bg-purple-100 text-purple-700",
+  samtale_2: "bg-fuchsia-100 text-fuchsia-700",
+  case_stadie: "bg-amber-100 text-amber-700",
+  tilbud: "bg-green-100 text-green-700",
+  ansat: "bg-emerald-200 text-emerald-800",
+  afslag: "bg-red-100 text-red-600",
+  // Pipeline 1.0
   draft: "bg-slate-100 text-slate-600",
   preparing: "bg-blue-100 text-blue-700",
   ready: "bg-cyan-100 text-cyan-700",
@@ -51,6 +70,173 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-slate-100 text-slate-500",
   hired: "bg-emerald-100 text-emerald-700",
 };
+
+// ── Quick Generate Modal ──────────────────────────────────────────────────────
+
+const API_BASE_JOBS = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+
+function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: boolean) => void }) {
+  const [docType, setDocType] = useState<"cover_letter" | "cv">("cover_letter");
+  const [lang, setLang] = useState<"da" | "en">("da");
+  const [style, setStyle] = useState("professional");
+  const [loading, setLoading] = useState(false);
+  const [content, setContent] = useState("");
+  const [docId, setDocId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiPost<{ content: string; document_id: string; pipeline_status: string }>(
+        `/jobs/${job.id}/quickgen`,
+        { doc_type: docType, language: lang, writing_style: style }
+      );
+      setContent(res.content);
+      setDocId(res.document_id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Generering fejlede";
+      if (msg.includes("402") || msg.includes("no_api_key")) {
+        setError("Ingen API-nøgle konfigureret — gå til Indstillinger → AI-udbydere.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function download(format: "pdf" | "docx") {
+    if (!docId) return;
+    const { createClient } = await import("@/lib/supabase");
+    const supabase = createClient();
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    const res = await fetch(`${API_BASE_JOBS}/api/v1/export/document/${docId}/${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${docType === "cv" ? "cv" : "ansoegning"}_${job.company}.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="flex h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">
+              {docType === "cv" ? "Genér job-specifikt CV" : "Genér ansøgning"}
+            </h2>
+            <p className="text-sm text-slate-500">{job.title} hos {job.company}</p>
+          </div>
+          <button onClick={() => onClose(!!docId)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        {!content && (
+          <div className="border-b border-slate-100 px-6 py-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Dokumenttype</label>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={docType}
+                  onChange={e => setDocType(e.target.value as "cover_letter" | "cv")}
+                >
+                  <option value="cover_letter">Ansøgning</option>
+                  <option value="cv">CV (tilpasset)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Sprog</label>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={lang}
+                  onChange={e => setLang(e.target.value as "da" | "en")}
+                >
+                  <option value="da">Dansk</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Stil</label>
+                <select
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                  value={style}
+                  onChange={e => setStyle(e.target.value)}
+                >
+                  <option value="professional">Professionel</option>
+                  <option value="direct">Direkte</option>
+                  <option value="warm">Varm</option>
+                  <option value="technical">Teknisk</option>
+                </select>
+              </div>
+            </div>
+            {error && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{error}</div>
+            )}
+          </div>
+        )}
+
+        <div className="flex-1 overflow-auto px-6 py-4">
+          {content ? (
+            <textarea
+              className="h-full w-full resize-none border-0 text-sm text-slate-700 outline-none leading-relaxed"
+              value={content}
+              onChange={e => setContent(e.target.value)}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-center text-slate-400">
+              <div>
+                <p className="text-sm">Klik &quot;Generér&quot; for at starte</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Dokumentet gemmes automatisk og linkes til dette job
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4">
+          <div className="flex gap-2">
+            {docId && (
+              <>
+                <button onClick={() => download("pdf")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">PDF</button>
+                <button onClick={() => download("docx")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">DOCX</button>
+              </>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {content && (
+              <button
+                onClick={() => { setContent(""); setDocId(null); }}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Ny version
+              </button>
+            )}
+            <button
+              onClick={loading ? undefined : generate}
+              disabled={loading}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            >
+              {loading ? "Genererer…" : content ? "Regenerér" : "Generér"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const JOB_TYPE_LABELS: Record<string, string> = {
   full_time: "Fuldtid", part_time: "Deltid",
@@ -179,11 +365,12 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job, onToggleSave, onDelete, onRefreshMatch }: {
+function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen }: {
   job: Job;
   onToggleSave: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshMatch: (id: string) => void;
+  onQuickGen: (job: Job) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -240,7 +427,23 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch }: {
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 italic">{job.notes}</p>
       )}
 
-      <div className="mt-4 flex items-center gap-2 border-t border-slate-100 pt-3">
+      {/* Quick-gen knapper */}
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => onQuickGen(job)}
+          className="flex-1 rounded-lg border border-blue-200 bg-blue-50 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
+        >
+          Genér CV
+        </button>
+        <button
+          onClick={() => onQuickGen(job)}
+          className="flex-1 rounded-lg border border-indigo-200 bg-indigo-50 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
+        >
+          Genér ansøgning
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
         {job.url && (
           <a href={job.url} target="_blank" rel="noopener noreferrer"
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
@@ -274,11 +477,11 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch }: {
 // ── Kanban ────────────────────────────────────────────────────────────────────
 
 const KANBAN_COLS: { id: string; label: string; statuses: (string | null)[] }[] = [
-  { id: "saved",       label: "Gemte",    statuses: [null] },
-  { id: "preparing",   label: "Forbereder",   statuses: ["draft", "preparing", "ready"] },
-  { id: "applied",     label: "Ansøgt",       statuses: ["submitted", "screening"] },
-  { id: "interviewing",label: "Interview",    statuses: ["interviewing"] },
-  { id: "outcome",     label: "Udfald",       statuses: ["offer", "hired", "rejected", "withdrawn"] },
+  { id: "fundet",       label: "Fundet / Gemt",  statuses: [null, "fundet", "gemt"] },
+  { id: "genereret",    label: "Genereret",       statuses: ["cv_genereret", "ansoegning_genereret", "draft", "preparing", "ready"] },
+  { id: "ansoegt",      label: "Ansøgt",          statuses: ["ansoegt", "submitted", "screening"] },
+  { id: "interview",    label: "Interview",       statuses: ["samtale_1", "samtale_2", "case_stadie", "interviewing"] },
+  { id: "udfald",       label: "Udfald",          statuses: ["tilbud", "ansat", "afslag", "offer", "hired", "rejected", "withdrawn"] },
 ];
 
 function KanbanBoard({ jobs, onToggleSave, onDelete, onRefreshMatch }: {
@@ -348,8 +551,12 @@ function KanbanBoard({ jobs, onToggleSave, onDelete, onRefreshMatch }: {
 
 type FilterTab = "alle" | "gemt" | "aktiv" | "afsluttet";
 
-const ACTIVE_STATUSES = new Set(["draft", "preparing", "ready", "submitted", "screening", "interviewing", "offer"]);
-const DONE_STATUSES   = new Set(["rejected", "withdrawn", "hired"]);
+const ACTIVE_STATUSES = new Set([
+  "draft", "preparing", "ready", "submitted", "screening", "interviewing", "offer",
+  "fundet", "gemt", "cv_genereret", "ansoegning_genereret", "ansoegt",
+  "samtale_1", "samtale_2", "case_stadie", "tilbud",
+]);
+const DONE_STATUSES = new Set(["rejected", "withdrawn", "hired", "afslag", "ansat"]);
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -358,6 +565,7 @@ export default function JobsPage() {
   const [tab, setTab] = useState<FilterTab>("alle");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [toast, setToast] = useState<string | null>(null);
+  const [quickGenJob, setQuickGenJob] = useState<Job | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -505,9 +713,20 @@ export default function JobsPage() {
               onToggleSave={handleToggleSave}
               onDelete={handleDelete}
               onRefreshMatch={handleRefreshMatch}
+              onQuickGen={j => setQuickGenJob(j)}
             />
           ))}
         </div>
+      )}
+
+      {quickGenJob && (
+        <QuickGenModal
+          job={quickGenJob}
+          onClose={(refreshNeeded) => {
+            setQuickGenJob(null);
+            if (refreshNeeded) loadJobs();
+          }}
+        />
       )}
     </div>
   );

@@ -18,7 +18,63 @@ class ApplicationAgent(BaseAgent):
           language: 'da' | 'en'
           writing_style: 'professional' | 'direct' | 'warm' | 'technical' | 'narrative'
           focus_areas: str (optional)
+          doc_type: 'cover_letter' | 'cv'  (default: 'cover_letter')
         """
+        doc_type = input_data.get("doc_type", "cover_letter")
+        if doc_type == "cv":
+            return await self._run_cv(input_data)
+        return await self._run_cover_letter(input_data)
+
+    async def _run_cv(self, input_data: dict) -> AgentResult:
+        language = input_data.get("language", "da")
+        job_title = input_data.get("job_title", "")
+        job_company = input_data.get("job_company", "")
+        job_description = input_data.get("job_description", "")[:3000]
+        requirements = input_data.get("job_requirements", [])
+        candidate_summary = input_data.get("candidate_summary", "")
+        req_text = "\n".join(f"- {r}" for r in requirements[:15]) if requirements else "Ikke angivet"
+
+        if language == "da":
+            system = (
+                "Du er en ekspert CV-skribent. Generér et professionelt, målrettet CV på dansk "
+                f"tilpasset stillingen {job_title} hos {job_company}. "
+                "Fremhæv de kompetencer og erfaringer der matcher jobkravene. "
+                "Brug bullet-points, kvantificér resultater. Maks 600 ord."
+            )
+            user_msg = (
+                f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
+                f"Kandidatprofil:\n{candidate_summary}"
+            )
+        else:
+            system = (
+                f"You are an expert CV writer. Generate a professional, targeted CV in English "
+                f"tailored to the {job_title} position at {job_company}. "
+                "Highlight skills and experience matching the job requirements. "
+                "Use bullet points, quantify results. Max 600 words."
+            )
+            user_msg = (
+                f"Requirements:\n{req_text}\n\nJob Description:\n{job_description}\n\n"
+                f"Candidate Profile:\n{candidate_summary}"
+            )
+
+        provider = LiteLLMProvider(self.user_id)
+        response = await provider.complete(
+            agent_name=self.name,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
+            stream=False, temperature=0.5, max_tokens=1200,
+        )
+        content = response.choices[0].message.content or ""
+        usage_data = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
+        usage = AgentUsage(
+            prompt_tokens=getattr(usage_data, "prompt_tokens", 0),
+            completion_tokens=getattr(usage_data, "completion_tokens", 0),
+            total_tokens=getattr(usage_data, "total_tokens", 0),
+            model=getattr(response, "model", "unknown"),
+            provider=getattr(response, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
+        )
+        return AgentResult(content=content, usage=usage, metadata={"language": language, "doc_type": "cv"})
+
+    async def _run_cover_letter(self, input_data: dict) -> AgentResult:
         language = input_data.get("language", "da")
         style = input_data.get("writing_style", "professional")
         job_title = input_data.get("job_title", "")
@@ -86,8 +142,8 @@ class ApplicationAgent(BaseAgent):
                 temperature=0.75,
                 max_tokens=800,
             )
-        except NoProviderKeyError as exc:
-            raise exc
+        except NoProviderKeyError:
+            raise
 
         content = response.choices[0].message.content or ""
         usage_data = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
@@ -103,5 +159,5 @@ class ApplicationAgent(BaseAgent):
         return AgentResult(
             content=content,
             usage=usage,
-            metadata={"language": language, "style": style},
+            metadata={"language": language, "style": style, "doc_type": "cover_letter"},
         )
