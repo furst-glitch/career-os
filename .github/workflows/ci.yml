@@ -34,13 +34,13 @@ jobs:
         continue-on-error: true
 
       - name: Unit tests
-        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SECRET_KEY: test-secret-key-for-ci-only
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          ENCRYPTION_KEY: test-ci-encryption-key
           # No REDIS_URL in CI — falls back to in-memory cache
 
       - name: Upload coverage
