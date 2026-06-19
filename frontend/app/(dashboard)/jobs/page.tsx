@@ -213,17 +213,17 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
             <div className="flex h-full flex-col items-center justify-center gap-4 px-8">
               <div className="w-full max-w-sm">
                 <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-                  <span>{progressMsg}</span>
+                  <span>{progressMsg || "Genererer..."}</span>
                   <span>{progressPct}%</span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-blue-500 transition-all duration-500"
-                    style={{ width: `${progressPct}%` }}
+                    style={{ width: `${Math.max(progressPct, 5)}%` }}
                   />
                 </div>
                 <p className="mt-3 text-center text-xs text-slate-400">
-                  ATS, HR og hiring manager gennemgår udkastet parallelt...
+                  Typisk 20-40 sekunder...
                 </p>
               </div>
             </div>
