@@ -35,7 +35,7 @@ def _pdf_from_text(title: str, content: str) -> bytes:
 
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(30, 64, 175)
-    pdf.cell(0, 10, _s(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 10, _s(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_draw_color(148, 163, 184)
     pdf.line(20, pdf.get_y(), 190, pdf.get_y())
     pdf.ln(4)
@@ -47,22 +47,22 @@ def _pdf_from_text(title: str, content: str) -> bytes:
             pdf.ln(3)
             pdf.set_font("Helvetica", "B", 12)
             pdf.set_text_color(30, 64, 175)
-            pdf.cell(0, 7, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 7, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(30, 41, 59)
         elif line.startswith("# "):
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 14)
             pdf.set_text_color(30, 64, 175)
-            pdf.cell(0, 8, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 8, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(30, 41, 59)
         elif line.startswith("**") and line.endswith("**"):
             pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(0, 6, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 6, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line.startswith("- ") or line.startswith("* "):
             pdf.set_font("Helvetica", "", 10)
             for wl in textwrap.wrap(line[2:], width=90):
                 pdf.cell(5, 5.5, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
-                pdf.cell(0, 5.5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5.5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line in ("---", "***"):
             pdf.ln(2)
             pdf.set_draw_color(203, 213, 225)
@@ -73,14 +73,14 @@ def _pdf_from_text(title: str, content: str) -> bytes:
         else:
             pdf.set_font("Helvetica", "", 10)
             for wl in textwrap.wrap(line, width=100) or [""]:
-                pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_auto_page_break(auto=False)
     pdf.set_y(-15)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(148, 163, 184)
     today = datetime.now().strftime("%d/%m/%Y")
-    pdf.cell(0, 10, f"CareerOS - {today}", align="C")
+    pdf.cell(0, 10, today, align="C")
 
     return bytes(pdf.output())
 
@@ -103,12 +103,12 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
 
     pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 10, _s(name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 10, _s(name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if cv_title:
         pdf.set_font("Helvetica", "", 13)
         pdf.set_text_color(37, 99, 235)
-        pdf.cell(0, 6, _s(cv_title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 6, _s(cv_title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_draw_color(37, 99, 235)
     pdf.set_line_width(0.5)
@@ -118,7 +118,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
     def section_header(text: str) -> None:
         pdf.set_font("Helvetica", "B", 11)
         pdf.set_text_color(30, 64, 175)
-        pdf.cell(0, 7, _s(text.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 7, _s(text.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_draw_color(193, 218, 254)
         pdf.line(18, pdf.get_y(), 192, pdf.get_y())
         pdf.ln(2)
@@ -128,7 +128,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
         section_header("Sammenfatning")
         pdf.set_font("Helvetica", "", 10)
         for wl in textwrap.wrap(summary, width=105):
-            pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
     experiences = cv_data.get("experiences") or []
@@ -141,19 +141,19 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
             period = f"{start} - {end}"
             title_co = f"{exp.get('title', '')} - {exp.get('company', '')}"
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 5.5, _s(title_co), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(title_co), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_font("Helvetica", "I", 9)
             pdf.set_text_color(100, 116, 139)
-            pdf.cell(0, 4.5, _s(period), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 4.5, _s(period), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(15, 23, 42)
             if exp.get("description"):
                 pdf.set_font("Helvetica", "", 9)
                 for wl in textwrap.wrap(exp["description"], width=110):
-                    pdf.cell(0, 4.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.multi_cell(0, 4.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             for ach in (exp.get("achievements") or [])[:3]:
                 pdf.set_font("Helvetica", "", 9)
                 for wl in textwrap.wrap(f"- {ach}", width=108):
-                    pdf.cell(0, 4.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.multi_cell(0, 4.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(3)
 
     skills = cv_data.get("skills") or []
@@ -163,7 +163,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
         skill_text = "  |  ".join(skill_names)
         pdf.set_font("Helvetica", "", 10)
         for wl in textwrap.wrap(skill_text, width=100):
-            pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
     educations = cv_data.get("educations") or []
@@ -172,12 +172,12 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
         for edu in educations:
             degree_inst = f"{edu.get('degree', '')} - {edu.get('institution', '')}"
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 5.5, _s(degree_inst), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(degree_inst), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             ps = (edu.get("period_start") or "")[:7]
             pe = (edu.get("period_end") or "")[:7]
             pdf.set_font("Helvetica", "I", 9)
             pdf.set_text_color(100, 116, 139)
-            pdf.cell(0, 4.5, _s(f"{ps} - {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 4.5, _s(f"{ps} - {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(15, 23, 42)
             pdf.ln(3)
 
@@ -190,7 +190,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
             cert_line = f"- {cert.get('name', '')} - {cert.get('issuer', '')}"
             if issued:
                 cert_line += f" ({issued})"
-            pdf.cell(0, 5.5, _s(cert_line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(cert_line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
     pdf.set_auto_page_break(auto=False)
@@ -198,7 +198,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(148, 163, 184)
     today = datetime.now().strftime("%d/%m/%Y")
-    pdf.cell(0, 8, f"CareerOS - {today}", align="C")
+    pdf.cell(0, 8, today, align="C")
 
     return bytes(pdf.output())
 
@@ -353,7 +353,7 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
     if name:
         pdf.set_font("Helvetica", "B", 20)
         pdf.set_text_color(*DARK)
-        pdf.cell(0, 10, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 10, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Kontaktlinje: email · tlf · lokation
     contact_parts = []
@@ -366,12 +366,12 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
     if contact_parts:
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*GRY)
-        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if profile.get("linkedin_url"):
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*GRY)
-        pdf.cell(0, 5, _s(profile["linkedin_url"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, _s(profile["linkedin_url"]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Skillelinje
     pdf.ln(2)
@@ -388,7 +388,7 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
             pdf.ln(3)
             pdf.set_font("Helvetica", "B", 11)
             pdf.set_text_color(*BLUE)
-            pdf.cell(0, 6, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 6, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_draw_color(*LGT)
             pdf.set_line_width(0.2)
             pdf.line(20, pdf.get_y(), 190, pdf.get_y())
@@ -398,18 +398,18 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
             pdf.ln(4)
             pdf.set_font("Helvetica", "B", 13)
             pdf.set_text_color(*DARK)
-            pdf.cell(0, 7, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 7, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(*DARK)
         elif line.startswith("**") and line.endswith("**"):
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(*DARK)
-            pdf.cell(0, 5.5, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line.startswith("- ") or line.startswith("* "):
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*DARK)
             for wl in textwrap.wrap(line[2:], width=100) or [""]:
                 pdf.cell(5, 5, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
-                pdf.cell(0, 5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line in ("---", "***"):
             pdf.ln(1)
             pdf.set_draw_color(*LGT)
@@ -422,14 +422,14 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*DARK)
             for wl in textwrap.wrap(line, width=105) or [""]:
-                pdf.cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_auto_page_break(auto=False)
     pdf.set_y(-13)
     pdf.set_font("Helvetica", "I", 7.5)
     pdf.set_text_color(*LGT)
     today = datetime.now().strftime("%d/%m/%Y")
-    pdf.cell(0, 5, f"CareerOS  |  {today}", align="C")
+    pdf.cell(0, 5, today, align="C")
 
     return bytes(pdf.output())
 

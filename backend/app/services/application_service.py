@@ -87,20 +87,28 @@ class ApplicationService:
         if not pipeline:
             return []
         result = (
-            self.db.table("pipeline_documents")
-            .select(
-                "id, document_role, added_at,"
-                "document_versions(id, title, version_number, language, document_type, generated_by, created_at, content)"
-            )
+            self.db.table("document_versions")
+            .select("id, title, document_type, content, version_number, language, generated_by, created_at")
             .eq("pipeline_id", pipeline_id)
+            .eq("user_id", user_id)
+            .order("version_number", desc=True)
             .execute()
         )
-        return result.data or []
+        # Return only the latest version per document_type, wrapped in the structure the frontend expects
+        seen: set = set()
+        docs = []
+        for doc in result.data or []:
+            dt = doc.get("document_type")
+            if dt not in seen:
+                seen.add(dt)
+                docs.append({"document_role": dt, "document_versions": doc})
+        return docs
 
     def add_document(self, user_id: str, pipeline_id: str, document_id: str, role: str) -> dict:
-        result = self.db.table("pipeline_documents").upsert(
+        # Remove old entries for the same role so only the latest document is linked
+        self.db.table("pipeline_documents").delete().eq("pipeline_id", pipeline_id).eq("document_role", role).execute()
+        result = self.db.table("pipeline_documents").insert(
             {"pipeline_id": pipeline_id, "document_id": document_id, "document_role": role},
-            on_conflict="pipeline_id,document_id",
         ).execute()
         return result.data[0]
 

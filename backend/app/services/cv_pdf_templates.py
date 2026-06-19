@@ -60,17 +60,17 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
     # Name
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(0, 0, 0)
-    pdf.cell(0, 9, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 9, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if title:
         pdf.set_font("Helvetica", "", 11)
-        pdf.cell(0, 6, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 6, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
     if contact_parts:
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(80, 80, 80)
-        pdf.cell(0, 5, "  |  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, "  |  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
 
@@ -78,7 +78,7 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
         pdf.ln(3)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(0, 0, 0)
-        pdf.cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_draw_color(0, 0, 0)
         pdf.set_line_width(0.3)
         pdf.line(20, pdf.get_y(), 190, pdf.get_y())
@@ -88,7 +88,7 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(0, 0, 0)
         for wl in textwrap.wrap(text, width) or [""]:
-            pdf.cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if summary:
         section("Professional Summary")
@@ -99,12 +99,12 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
         section("Experience")
         for exp in exps:
             pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(0, 5, _s(f"{exp.get('title','')} | {exp.get('company','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(f"{exp.get('title','')} | {exp.get('company','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             period = _s(_period(exp))
             if period:
                 pdf.set_font("Helvetica", "", 8)
                 pdf.set_text_color(60, 60, 60)
-                pdf.cell(0, 4, period, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 4, period, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_text_color(0, 0, 0)
             if exp.get("description"):
                 body_wrap(exp["description"])
@@ -123,13 +123,13 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
         section("Education")
         for edu in edus:
             pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(0, 5, _s(f"{edu.get('degree','')} – {edu.get('institution','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(f"{edu.get('degree','')} – {edu.get('institution','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             ps = (edu.get("period_start") or "")[:7]
             pe = (edu.get("period_end") or "")[:7]
             if ps:
                 pdf.set_font("Helvetica", "", 8)
                 pdf.set_text_color(60, 60, 60)
-                pdf.cell(0, 4, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 4, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_text_color(0, 0, 0)
             pdf.ln(1.5)
 
@@ -349,18 +349,18 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
     # Name
     pdf.set_font("Times", "B", 24)
     pdf.set_text_color(*DARK)
-    pdf.cell(0, 12, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.multi_cell(0, 12, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     if title_str:
         pdf.set_font("Times", "I", 12)
         pdf.set_text_color(*GREY)
-        pdf.cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.multi_cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
     if contact_parts:
         pdf.set_font("Times", "", 9)
         pdf.set_text_color(*GREY)
-        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.multi_cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     # Gold double rule
     pdf.ln(3)
@@ -376,7 +376,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
         pdf.ln(4)
         pdf.set_font("Times", "B", 11)
         pdf.set_text_color(*GOLD)
-        pdf.cell(0, 6, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 6, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_draw_color(*GOLD)
         pdf.set_line_width(0.3)
         pdf.line(28, pdf.get_y(), 182, pdf.get_y())
@@ -387,7 +387,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
         pdf.set_font("Times", "", 10)
         pdf.set_text_color(*DARK)
         for wl in textwrap.wrap(text, width) or [""]:
-            pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if summary:
         section("Executive Summary")
@@ -405,7 +405,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
             if period:
                 pdf.set_font("Times", "I", 9.5)
                 pdf.set_text_color(*GREY)
-                pdf.cell(0, 5, period, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5, period, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_text_color(*DARK)
             if exp.get("description"):
                 body_wrap(exp["description"])
@@ -443,7 +443,7 @@ def cv_pdf_executive(cv_data: dict) -> bytes:
             if ps:
                 pdf.set_font("Times", "I", 9.5)
                 pdf.set_text_color(*GREY)
-                pdf.cell(0, 5, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 pdf.set_text_color(*DARK)
             pdf.ln(1.5)
 
@@ -498,18 +498,18 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
     # Name — light weight, large
     pdf.set_font("Helvetica", "", 22)
     pdf.set_text_color(*DARK)
-    pdf.cell(0, 11, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 11, name, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if title_str:
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(*MED)
-        pdf.cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 6, title_str, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     contact_parts = [_s(v) for v in [_prof.get("email"), _prof.get("phone"), _prof.get("location")] if v]
     if contact_parts:
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*LGT)
-        pdf.cell(0, 5, "   ·   ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, "   ·   ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.ln(3)
     pdf.set_draw_color(*LGT)
@@ -521,7 +521,7 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
         pdf.ln(6)
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(*MED)
-        pdf.cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_draw_color(*LGT)
         pdf.set_line_width(0.2)
         pdf.line(26, pdf.get_y(), 184, pdf.get_y())
@@ -532,7 +532,7 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
         pdf.set_font("Helvetica", "", size)
         pdf.set_text_color(*DARK)
         for wl in textwrap.wrap(text, width) or [""]:
-            pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if summary:
         section("Summary")
@@ -552,22 +552,22 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
             pdf.set_text_color(*DARK)
             role_x = 26 + 40
             pdf.set_x(role_x)
-            pdf.cell(0, 5.5, _s(f"{exp.get('title','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(f"{exp.get('title','')}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_x(role_x)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(*MED)
-            pdf.cell(0, 5, _s(exp.get("company", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(exp.get("company", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(*DARK)
             if exp.get("description"):
                 pdf.set_x(role_x)
                 pdf.set_font("Helvetica", "", 9)
                 for wl in textwrap.wrap(_s(exp["description"]), 80) or [""]:
                     pdf.set_x(role_x)
-                    pdf.cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.multi_cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             for ach in (exp.get("achievements") or [])[:3]:
                 pdf.set_x(role_x)
                 pdf.set_font("Helvetica", "", 8.5)
-                pdf.cell(0, 4.5, _s(f"— {ach}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 4.5, _s(f"— {ach}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(3)
 
     skills = cv_data.get("skills") or []
@@ -589,11 +589,11 @@ def cv_pdf_nordic(cv_data: dict) -> bytes:
             pdf.set_x(26 + 40)
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.set_text_color(*DARK)
-            pdf.cell(0, 5.5, _s(edu.get("degree", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5.5, _s(edu.get("degree", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_x(26 + 40)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(*MED)
-            pdf.cell(0, 5, _s(edu.get("institution", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(edu.get("institution", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(1.5)
 
     certs = cv_data.get("certifications") or []
@@ -649,13 +649,21 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
     pdf.set_fill_color(*TEAL)
     pdf.rect(0, 0, 210, HEADER_H, "F")
 
-    pdf.set_font("Helvetica", "B", 20)
+    fs_name = 20
+    pdf.set_font("Helvetica", "B", fs_name)
+    while pdf.get_string_width(name) > 168 and fs_name > 12:
+        fs_name -= 1
+        pdf.set_font("Helvetica", "B", fs_name)
     pdf.set_text_color(*WHT)
     pdf.set_xy(18, 10)
     pdf.cell(174, 10, name)
 
     if title_str:
-        pdf.set_font("Helvetica", "", 10)
+        fs_sub = 10
+        pdf.set_font("Helvetica", "", fs_sub)
+        while pdf.get_string_width(title_str) > 168 and fs_sub > 7:
+            fs_sub -= 0.5
+            pdf.set_font("Helvetica", "", fs_sub)
         pdf.set_text_color(200, 240, 235)
         pdf.set_xy(18, 22)
         pdf.cell(174, 8, title_str)
@@ -672,14 +680,14 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
     if contact_parts:
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(*GRY)
-        pdf.cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, "  ·  ".join(contact_parts), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
     def section(label: str) -> None:
         pdf.ln(4)
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_text_color(*TEAL)
-        pdf.cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, label.upper(), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_draw_color(*TEAL)
         pdf.set_line_width(0.4)
         pdf.line(18, pdf.get_y(), 192, pdf.get_y())
@@ -692,7 +700,7 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
         for wl in textwrap.wrap(text, width) or [""]:
             if indent:
                 pdf.cell(indent)
-            pdf.cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     if summary:
         section("Profile")
@@ -710,7 +718,7 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
             pdf.set_font("Helvetica", "B", 9.5)
             pdf.set_text_color(*DARK)
             pdf.set_xy(22, ey)
-            pdf.cell(0, 5, _s(exp.get("title", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(exp.get("title", "")), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
             pdf.set_xy(22, pdf.get_y())
             pdf.set_font("Helvetica", "", 9)
@@ -727,14 +735,14 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
                 for wl in textwrap.wrap(_s(exp["description"]), 100) or [""]:
                     pdf.set_x(22)
                     pdf.set_font("Helvetica", "", 9)
-                    pdf.cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.multi_cell(0, 4.8, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             for ach in (exp.get("achievements") or [])[:3]:
                 pdf.set_x(22)
                 pdf.set_font("Helvetica", "", 8.5)
                 pdf.set_text_color(*TEAL)
                 pdf.cell(4, 4.5, "›")
                 pdf.set_text_color(*DARK)
-                pdf.cell(0, 4.5, _s(ach), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 4.5, _s(ach), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(2)
 
     skills = cv_data.get("skills") or []
@@ -769,7 +777,7 @@ def cv_pdf_creative(cv_data: dict) -> bytes:
             if ps:
                 pdf.set_font("Helvetica", "", 8.5)
                 pdf.set_text_color(*GRY)
-                pdf.cell(0, 4.5, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 4.5, _s(f"{ps} – {pe}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.ln(1.5)
 
     certs = cv_data.get("certifications") or []

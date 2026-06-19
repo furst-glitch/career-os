@@ -234,8 +234,8 @@ export default function ApplyWorkspacePage() {
             if (doc.document_role === "cv") setCv(loaded);
             else if (doc.document_role === "cover_letter") setApp(loaded);
           }
-        } catch {
-          // Dokument-load fejler stille — user kan regenerere
+        } catch (err) {
+          console.error("[apply] Kunne ikke hente eksisterende dokumenter:", err);
         }
       }
     } catch {

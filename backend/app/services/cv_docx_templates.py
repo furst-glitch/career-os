@@ -108,10 +108,18 @@ def cv_docx_ats(cv_data: dict) -> bytes:
 
     if title_str:
         p2 = doc.add_paragraph()
-        _para_space(p2, 0, 60)
+        _para_space(p2, 0, 40)
         r2 = p2.add_run(title_str)
         r2.font.size = Pt(11)
         r2.font.color.rgb = _rgb((70, 85, 105))
+
+    contact_parts = [_s(v) for v in [profile.get("email"), profile.get("phone"), profile.get("location")] if v]
+    if contact_parts:
+        pc = doc.add_paragraph()
+        _para_space(pc, 0, 60)
+        rc = pc.add_run("  ·  ".join(contact_parts))
+        rc.font.size = Pt(9)
+        rc.font.color.rgb = _rgb((100, 116, 139))
 
     def section_head(label: str) -> None:
         _add_hr(doc, (10, 15, 35), 8)
@@ -234,15 +242,21 @@ def cv_docx_modern(cv_data: dict) -> bytes:
     if title_str:
         p2 = hdr_cell.add_paragraph()
         p2.paragraph_format.left_indent = Inches(0.35)
-        p2.paragraph_format.space_after = Pt(12)
+        p2.paragraph_format.space_after = Pt(4)
         r2 = p2.add_run(title_str)
         r2.font.name = "Calibri"
         r2.font.size = Pt(10.5)
         r2.font.color.rgb = _rgb(ACC)
 
-    # Two-column body: sidebar | main
-    Inches(2.4)
-    Inches(5.0)
+    contact_parts = [_s(v) for v in [profile.get("email"), profile.get("phone"), profile.get("location")] if v]
+    if contact_parts:
+        pc = hdr_cell.add_paragraph()
+        pc.paragraph_format.left_indent = Inches(0.35)
+        pc.paragraph_format.space_after = Pt(12)
+        rc = pc.add_run("  ·  ".join(contact_parts))
+        rc.font.name = "Calibri"
+        rc.font.size = Pt(8.5)
+        rc.font.color.rgb = _rgb((180, 200, 230))
 
     doc.add_paragraph()  # spacer
 
@@ -344,11 +358,20 @@ def cv_docx_executive(cv_data: dict) -> bytes:
 
     if title_str:
         p2 = doc.add_paragraph()
-        _para_space(p2, 0, 80)
+        _para_space(p2, 0, 30)
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
         r2 = p2.add_run(title_str)
         r2.font.name = "Georgia"; r2.font.size = Pt(12); r2.font.italic = True
         r2.font.color.rgb = _rgb(GREY)
+
+    contact_parts = [_s(v) for v in [profile.get("email"), profile.get("phone"), profile.get("location")] if v]
+    if contact_parts:
+        pc = doc.add_paragraph()
+        _para_space(pc, 0, 60)
+        pc.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        rc = pc.add_run("  ·  ".join(contact_parts))
+        rc.font.name = "Georgia"; rc.font.size = Pt(9)
+        rc.font.color.rgb = _rgb(GREY)
 
     _add_hr(doc, GOLD, 12)
     _add_hr(doc, GOLD, 4)
@@ -426,7 +449,7 @@ def cv_docx_executive(cv_data: dict) -> bytes:
     p = doc.add_paragraph()
     _para_space(p, 40, 0)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f"CareerOS  ·  {_today()}")
+    r = p.add_run(_today())
     r.font.name = "Georgia"; r.font.italic = True; r.font.size = Pt(8)
     r.font.color.rgb = _rgb(GREY)
 
@@ -461,10 +484,18 @@ def cv_docx_nordic(cv_data: dict) -> bytes:
 
     if title_str:
         p2 = doc.add_paragraph()
-        _para_space(p2, 0, 100)
+        _para_space(p2, 0, 40)
         r2 = p2.add_run(title_str)
         r2.font.name = "Calibri Light"; r2.font.size = Pt(12)
         r2.font.color.rgb = _rgb(MED)
+
+    contact_parts = [_s(v) for v in [profile.get("email"), profile.get("phone"), profile.get("location")] if v]
+    if contact_parts:
+        pc = doc.add_paragraph()
+        _para_space(pc, 0, 80)
+        rc = pc.add_run("   ·   ".join(contact_parts))
+        rc.font.name = "Calibri Light"; rc.font.size = Pt(9)
+        rc.font.color.rgb = _rgb(LGT)
 
     _add_hr(doc, LGT, 4)
 
@@ -557,7 +588,7 @@ def cv_docx_nordic(cv_data: dict) -> bytes:
     p = doc.add_paragraph()
     _para_space(p, 30, 0)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f"CareerOS  ·  {_today()}")
+    r = p.add_run(_today())
     r.font.name = "Calibri Light"; r.font.size = Pt(7.5)
     r.font.color.rgb = _rgb(LGT)
 
@@ -602,10 +633,19 @@ def cv_docx_creative(cv_data: dict) -> bytes:
     if title_str:
         p2 = hc.add_paragraph()
         p2.paragraph_format.left_indent = Inches(0.35)
-        p2.paragraph_format.space_after = Pt(14)
+        p2.paragraph_format.space_after = Pt(4)
         r2 = p2.add_run(title_str)
         r2.font.name = "Calibri"; r2.font.size = Pt(11)
         r2.font.color.rgb = _rgb(TEAL_L)
+
+    contact_parts = [_s(v) for v in [profile.get("email"), profile.get("phone"), profile.get("location")] if v]
+    if contact_parts:
+        pc = hc.add_paragraph()
+        pc.paragraph_format.left_indent = Inches(0.35)
+        pc.paragraph_format.space_after = Pt(12)
+        rc = pc.add_run("  ·  ".join(contact_parts))
+        rc.font.name = "Calibri"; rc.font.size = Pt(8.5)
+        rc.font.color.rgb = _rgb(TEAL_L)
 
     # Thin accent strip table
     strip = doc.add_table(rows=1, cols=1)
@@ -691,7 +731,7 @@ def cv_docx_creative(cv_data: dict) -> bytes:
     p = doc.add_paragraph()
     _para_space(p, 100, 0)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f"CareerOS  |  {_today()}")
+    r = p.add_run(_today())
     r.font.size = Pt(7.5); r.font.color.rgb = _rgb(GRY)
 
     return _doc_bytes(doc)

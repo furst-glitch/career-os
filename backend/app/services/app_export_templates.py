@@ -52,25 +52,25 @@ def _render_body_pdf(pdf, content: str, body_size: float, heading_color: tuple,
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", body_size + 1)
             pdf.set_text_color(*heading_color)
-            pdf.cell(0, line_h + 0.5, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, line_h + 0.5, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(*body_color)
         elif line.startswith("# "):
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", body_size + 2)
             pdf.set_text_color(*heading_color)
-            pdf.cell(0, line_h + 1, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, line_h + 1, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(*body_color)
         elif line.startswith("- ") or line.startswith("* "):
             pdf.set_font("Helvetica", "", body_size)
             for wl in textwrap.wrap(line[2:], 95) or [""]:
                 pdf.cell(5, line_h, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
-                pdf.cell(0, line_h, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, line_h, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line == "" or line in ("---", "***"):
             pdf.ln(3)
         else:
             pdf.set_font("Helvetica", "", body_size)
             for wl in textwrap.wrap(line, 100) or [""]:
-                pdf.cell(0, line_h, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, line_h, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
 # ── 1. Corporate ──────────────────────────────────────────────────────────────
@@ -94,15 +94,25 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
     # Header band
     pdf.set_fill_color(*BLUE)
     pdf.rect(0, 0, 210, 28, "F")
-    pdf.set_font("Helvetica", "B", 16)
+    title_str = _s(title)
+    fs = 16
+    pdf.set_font("Helvetica", "B", fs)
+    while pdf.get_string_width(title_str) > 160 and fs > 9:
+        fs -= 1
+        pdf.set_font("Helvetica", "B", fs)
     pdf.set_text_color(255, 255, 255)
     pdf.set_xy(22, 9)
-    pdf.cell(166, 9, _s(title))
+    pdf.cell(166, 9, title_str)
     if company_name:
-        pdf.set_font("Helvetica", "", 9)
+        co_str = _s(f"Til: {company_name}")
+        fs_co = 9
+        pdf.set_font("Helvetica", "", fs_co)
+        while pdf.get_string_width(co_str) > 160 and fs_co > 7:
+            fs_co -= 0.5
+            pdf.set_font("Helvetica", "", fs_co)
         pdf.set_text_color(180, 200, 240)
         pdf.set_xy(22, 19)
-        pdf.cell(166, 5, _s(f"Til: {company_name}"))
+        pdf.cell(166, 5, co_str)
 
     pdf.set_y(35)
 
@@ -110,16 +120,16 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
     if applicant_name:
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(*DARK)
-        pdf.cell(0, 5, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
         if contact_parts:
             pdf.set_font("Helvetica", "", 8.5)
             pdf.set_text_color(*GRY)
-            pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRY)
-    pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(6)
 
     # Body
@@ -135,7 +145,7 @@ def app_pdf_corporate(title: str, content: str, applicant_name: str = "",
     pdf.ln(1.5)
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*GRY)
-    pdf.cell(0, 5, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -161,12 +171,12 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
     # Letterhead
     pdf.set_font("Times", "B", 20)
     pdf.set_text_color(*DARK)
-    pdf.cell(0, 10, _s(applicant_name or ""), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.multi_cell(0, 10, _s(applicant_name or ""), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
     if contact_parts:
         pdf.set_font("Times", "", 9)
         pdf.set_text_color(*GREY)
-        pdf.cell(0, 5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.multi_cell(0, 5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     pdf.ln(1)
     pdf.set_draw_color(*GOLD)
@@ -180,19 +190,19 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
     # Date + addressee
     pdf.set_font("Times", "", 10)
     pdf.set_text_color(*GREY)
-    pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
+    pdf.multi_cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
     pdf.ln(3)
 
     if company_name:
         pdf.set_font("Times", "", 10)
         pdf.set_text_color(*GREY)
-        pdf.cell(0, 5, _s(f"Att.: {company_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, _s(f"Att.: {company_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
     # Title (RE: style)
     pdf.set_font("Times", "B", 12)
     pdf.set_text_color(*DARK)
-    pdf.cell(0, 7, _s(f"Re: {title}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 7, _s(f"Re: {title}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
     # Body — Times, generous line height
@@ -203,18 +213,18 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
             pdf.ln(2)
             pdf.set_font("Times", "B", 11.5)
             pdf.set_text_color(*GOLD)
-            pdf.cell(0, 6, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 6, _s(line[3:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_text_color(*DARK)
         elif line.startswith("- ") or line.startswith("* "):
             pdf.set_font("Times", "", 10.5)
             for wl in textwrap.wrap(line[2:], 88) or [""]:
-                pdf.cell(0, 6, _s(f"–  {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 6, _s(f"–  {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line == "":
             pdf.ln(3)
         else:
             pdf.set_font("Times", "", 10.5)
             for wl in textwrap.wrap(line, 95) or [""]:
-                pdf.cell(0, 6, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 6, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Footer rules
     pdf.set_auto_page_break(auto=False)
@@ -228,7 +238,7 @@ def app_pdf_executive(title: str, content: str, applicant_name: str = "",
     pdf.ln(2)
     pdf.set_font("Times", "I", 8)
     pdf.set_text_color(*GREY)
-    pdf.cell(0, 5, f"CareerOS  ·  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -260,21 +270,21 @@ def app_pdf_modern(title: str, content: str, applicant_name: str = "",
     if applicant_name:
         pdf.set_font("Helvetica", "B", 14)
         pdf.set_text_color(*DARK)
-        pdf.cell(0, 7, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 7, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*TEAL)
-    pdf.cell(0, 5, _s(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5, _s(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRY)
     contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
     if contact_parts:
-        pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     if company_name:
-        pdf.cell(0, 5, _s(f"Til: {company_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5, _s(f"Til: {company_name}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(5)
 
     # Teal separator
@@ -294,7 +304,7 @@ def app_pdf_modern(title: str, content: str, applicant_name: str = "",
     pdf.rect(0, pdf.get_y(), 210, 12, "F")
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 12, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 12, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -321,12 +331,12 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
     if applicant_name:
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*DARK)
-        pdf.cell(0, 7, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 7, _s(applicant_name), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
         if contact_parts:
             pdf.set_font("Helvetica", "", 8.5)
             pdf.set_text_color(*MED)
-            pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_draw_color(*DARK)
     pdf.set_line_width(0.5)
@@ -336,7 +346,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
     # Date + RE
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*MED)
-    pdf.cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
+    pdf.multi_cell(0, 5, _s(_today()), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="R")
     pdf.ln(1)
 
     pdf.set_font("Helvetica", "B", 11)
@@ -344,7 +354,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
     re_line = f"RE: {title}"
     if company_name:
         re_line += f"  —  {company_name}"
-    pdf.cell(0, 6, _s(re_line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 6, _s(re_line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_draw_color(*LGT)
     pdf.set_line_width(0.2)
@@ -358,7 +368,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
             pdf.ln(2)
             pdf.set_font("Helvetica", "B", 10.5)
             pdf.set_text_color(*DARK)
-            pdf.cell(0, 6, _s(line[3:].upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 6, _s(line[3:].upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
             pdf.set_draw_color(*LGT)
             pdf.set_line_width(0.2)
             pdf.line(24, pdf.get_y(), 186, pdf.get_y())
@@ -368,14 +378,14 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
             pdf.set_text_color(*DARK)
             for wl in textwrap.wrap(line[2:], 93) or [""]:
                 pdf.cell(6, 5.5, "[+]", new_x=XPos.RIGHT, new_y=YPos.TOP)
-                pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line == "":
             pdf.ln(3)
         else:
             pdf.set_font("Helvetica", "", 10)
             pdf.set_text_color(*DARK)
             for wl in textwrap.wrap(line, 100) or [""]:
-                pdf.cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.multi_cell(0, 5.5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     # Footer
     pdf.set_auto_page_break(auto=False)
@@ -386,7 +396,7 @@ def app_pdf_technical(title: str, content: str, applicant_name: str = "",
     pdf.ln(1.5)
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*MED)
-    pdf.cell(0, 5, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -417,17 +427,27 @@ def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
     pdf.rect(105, 0, 105, 32, "F")
 
     # Name
-    pdf.set_font("Helvetica", "B", 16)
+    hdr_str = _s(applicant_name or title)
+    fs_hdr = 16
+    pdf.set_font("Helvetica", "B", fs_hdr)
+    while pdf.get_string_width(hdr_str) > 164 and fs_hdr > 9:
+        fs_hdr -= 1
+        pdf.set_font("Helvetica", "B", fs_hdr)
     pdf.set_text_color(255, 255, 255)
     pdf.set_xy(20, 8)
-    pdf.cell(170, 9, _s(applicant_name or title))
+    pdf.cell(170, 9, hdr_str)
 
     # Subtitle
-    pdf.set_font("Helvetica", "", 9.5)
+    sub = title if applicant_name else (f"Ansøgning — {company_name}" if company_name else "")
+    sub_str = _s(sub)
+    fs_sub = 9
+    pdf.set_font("Helvetica", "", fs_sub)
+    while pdf.get_string_width(sub_str) > 164 and fs_sub > 7:
+        fs_sub -= 0.5
+        pdf.set_font("Helvetica", "", fs_sub)
     pdf.set_text_color(210, 215, 250)
     pdf.set_xy(20, 19)
-    sub = title if applicant_name else (f"Ansøgning — {company_name}" if company_name else "")
-    pdf.cell(170, 6, _s(sub))
+    pdf.cell(170, 6, sub_str)
 
     pdf.set_y(38)
 
@@ -436,11 +456,11 @@ def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
     pdf.set_text_color(*GRY)
     contact_parts = [x for x in [p.get("email"), p.get("phone"), p.get("location")] if x]
     if contact_parts:
-        pdf.cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 4.5, _s("  ·  ".join(contact_parts)), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     info = _today()
     if company_name:
         info = f"{company_name}  ·  {info}"
-    pdf.cell(0, 5, _s(info), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5, _s(info), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(4)
 
     # Body
@@ -452,7 +472,7 @@ def app_pdf_graduate(title: str, content: str, applicant_name: str = "",
     pdf.set_y(-13)
     pdf.set_font("Helvetica", "", 7.5)
     pdf.set_text_color(*GRY)
-    pdf.cell(0, 5, f"CareerOS  |  {_today()}", align="C")
+    pdf.cell(0, 5, _today(), align="C")
 
     return bytes(pdf.output())
 
@@ -653,7 +673,7 @@ def app_docx_executive(title: str, content: str, applicant_name: str = "",
     _add_hr_docx(doc, GOLD, 10)
     p = doc.add_paragraph(); _para_space(p, 40, 0)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = p.add_run(f"CareerOS  ·  {_today()}")
+    r = p.add_run(_today())
     r.font.name = "Georgia"; r.font.italic = True; r.font.size = Pt(8)
     r.font.color.rgb = _rgb(GREY)
     return _doc_bytes(doc)
@@ -759,7 +779,7 @@ def app_docx_technical(title: str, content: str, applicant_name: str = "",
     _add_hr_docx(doc, DARK, 8)
 
     p = doc.add_paragraph(); _para_space(p, 30, 0)
-    r = p.add_run(f"CareerOS  |  {_today()}")
+    r = p.add_run(_today())
     r.font.name = "Calibri"; r.font.size = Pt(8); r.font.color.rgb = _rgb(MED)
     return _doc_bytes(doc)
 
@@ -816,7 +836,7 @@ def app_docx_graduate(title: str, content: str, applicant_name: str = "",
     _render_body_docx(doc, content, "Calibri", 10.5, PUR, DARK)
 
     p = doc.add_paragraph(); _para_space(p, 100, 0)
-    r = p.add_run(f"CareerOS  |  {_today()}")
+    r = p.add_run(_today())
     r.font.name = "Calibri"; r.font.size = Pt(8); r.font.color.rgb = _rgb(GRY)
     return _doc_bytes(doc)
 
