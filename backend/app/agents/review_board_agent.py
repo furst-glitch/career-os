@@ -34,6 +34,7 @@ class ReviewBoardAgent(BaseAgent):
     async def _run_rewrite(self, input_data: dict) -> AgentResult:
         draft = input_data.get("draft", "")
         critic_feedback = input_data.get("critic_feedback", "")
+        design_guide = input_data.get("design_guide", "")
         job_title = input_data.get("job_title", "")
         job_company = input_data.get("job_company", "")
         job_description = input_data.get("job_description", "")[:1500]
@@ -42,8 +43,8 @@ class ReviewBoardAgent(BaseAgent):
         if language == "da":
             system = (
                 "Du er chefredaktør og producerer den endelige udgave af et CV. "
-                "Du modtager et udkast og en prioriteret liste af forbedringer. "
-                "Din opgave: omskriv udkastet så det implementerer ALLE forbedringer og bliver markant stærkere. "
+                "Du modtager et udkast, en prioriteret liste af forbedringer og en template-stilguide. "
+                "Din opgave: omskriv udkastet så det implementerer ALLE forbedringer og følger stilguiden præcist. "
                 "Bevar kandidatens reelle erfaringer og informationer — tilføj eller opfind IKKE facts. "
                 "Output: KUN det forbedrede CV. Ingen kommentarer om hvad du har ændret.\n\n"
                 "VIGTIGT: Skriv altid med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å. Brug IKKE ae, oe, aa.\n"
@@ -55,11 +56,13 @@ class ReviewBoardAgent(BaseAgent):
                 f"CV-udkast:\n{draft}\n\n"
                 f"Forbedringer der SKAL implementeres:\n{critic_feedback}"
             )
+            if design_guide:
+                user_msg += f"\n\nTemplate-stilguide (følg disse instruktioner):\n{design_guide}"
         else:
             system = (
                 "You are editor-in-chief producing the final version of a CV. "
-                "You receive a draft and a prioritized list of improvements. "
-                "Your task: rewrite the draft to implement ALL improvements and make it markedly stronger. "
+                "You receive a draft, a prioritized list of improvements, and a template style guide. "
+                "Your task: rewrite the draft to implement ALL improvements and follow the style guide precisely. "
                 "Preserve the candidate's real experiences and information — do NOT add or invent facts. "
                 "Output: ONLY the improved CV. No commentary about what you changed.\n\n"
                 "Do NOT use markdown formatting (no **, *, # or other symbols). Write plain text."
@@ -70,6 +73,8 @@ class ReviewBoardAgent(BaseAgent):
                 f"CV Draft:\n{draft}\n\n"
                 f"Improvements to implement:\n{critic_feedback}"
             )
+            if design_guide:
+                user_msg += f"\n\nTemplate style guide (follow these instructions):\n{design_guide}"
 
         provider = LiteLLMProvider(self.user_id)
         response = await provider.complete(
@@ -92,6 +97,7 @@ class ReviewBoardAgent(BaseAgent):
     async def _run_brief(self, input_data: dict) -> AgentResult:
         job_analysis = input_data.get("job_analysis", "")
         must_haves = input_data.get("must_haves", "")
+        design_guide = input_data.get("design_guide", "")
         job_title = input_data.get("job_title", "")
         job_company = input_data.get("job_company", "")
         language = input_data.get("language", "da")
@@ -114,6 +120,8 @@ class ReviewBoardAgent(BaseAgent):
                 f"Jobanalyse:\n{job_analysis}\n\n"
                 f"Vigtigste krav til ansøgningen:\n{must_haves}"
             )
+            if design_guide:
+                user_msg += f"\n\nTemplate-stilguide (inkorporér i briefen):\n{design_guide}"
         else:
             system = (
                 "You are a creative director producing precise writing instructions. "
@@ -132,6 +140,8 @@ class ReviewBoardAgent(BaseAgent):
                 f"Job Analysis:\n{job_analysis}\n\n"
                 f"Key requirements for the application:\n{must_haves}"
             )
+            if design_guide:
+                user_msg += f"\n\nTemplate style guide (incorporate into the brief):\n{design_guide}"
 
         provider = LiteLLMProvider(self.user_id)
         response = await provider.complete(

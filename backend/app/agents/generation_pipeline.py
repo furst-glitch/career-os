@@ -1,21 +1,28 @@
 """
 GenerationPipeline — multi-agent dokumentgenerering.
 
-CV Pipeline (CVAgent → ATSAgent → CriticAgent → ReviewBoardAgent):
+CV Pipeline (CVAgent → ATSAgent → CriticAgent → DesignerAgent → ReviewBoardAgent):
   1. CVAgent.generate()           → udkast CV                       ~25-35s
   2. ATSAgent                     → ATS-feedback på udkast          ~10-15s
   3. CriticAgent                  → top-5 forbedringer              ~8-12s
-  4. ReviewBoardAgent (rewrite)   → endeligt CV                     ~25-35s
-  Estimeret total: ~70-100s  (vs. 25-40s single-call)
+  4. DesignerAgent                → template-specifik stilguide     ~8-10s
+  5. ReviewBoardAgent (rewrite)   → endeligt CV                     ~25-35s
+  Estimeret total: ~80-110s  (vs. 25-40s single-call)
 
 Application Pipeline (JobAgent → HRAgent → HiringManagerAgent → ATSAgent
-                      → CriticAgent → ReviewBoardAgent → ApplicationAgent):
+                      → CriticAgent → DesignerAgent → ReviewBoardAgent → ApplicationAgent):
   1. JobAgent                     → jobanalyse                      ~10-15s
   2-4. HRAgent + HMAgent + ATS    → parallelle perspektiver         ~15-25s
   5. CriticAgent                  → must-haves                      ~8-12s
-  6. ReviewBoardAgent (brief)     → skrivebrief                     ~8-12s
-  7. ApplicationAgent             → endelig ansøgning               ~25-35s
-  Estimeret total: ~65-95s  (vs. 25-40s single-call)
+  6. DesignerAgent                → template-specifik stilguide     ~8-10s
+  7. ReviewBoardAgent (brief)     → skrivebrief                     ~8-12s
+  8. ApplicationAgent             → endelig ansøgning               ~25-35s
+  Estimeret total: ~75-110s  (vs. 25-40s single-call)
+
+Template-integration:
+  Brugerens valgte template (fra Indstillinger → Layout) sendes som 'template'
+  i input_data og bruges af DesignerAgent til at producere template-specifikke
+  stilinstruktioner der fodres ind i ReviewBoardAgent / ApplicationAgent.
 """
 from __future__ import annotations
 
@@ -25,6 +32,7 @@ from app.agents.application_agent import ApplicationAgent
 from app.agents.ats_agent import ATSAgent
 from app.agents.critic_agent import CriticAgent
 from app.agents.cv_agent import CVAgent
+from app.agents.designer_agent import DesignerAgent
 from app.agents.hiring_manager_agent import HiringManagerAgent
 from app.agents.hr_agent import HRAgent
 from app.agents.job_agent import JobAgent
@@ -40,12 +48,13 @@ class GenerationPipeline:
 
     async def generate_cv(self, input_data: dict, queue: asyncio.Queue | None = None) -> str:
         """
-        CVAgent → ATSAgent → CriticAgent → ReviewBoardAgent
+        CVAgent → ATSAgent → CriticAgent → DesignerAgent → ReviewBoardAgent
         Returnerer endeligt CV som plaintext string.
         """
         uid, db = self.user_id, self.supabase
         job_ctx = self._job_ctx(input_data)
         lang = input_data.get("language", "da")
+        template = input_data.get("template", "ats_professional")
         da = lang == "da"
 
         # Trin 1: CVAgent skriver udkast
@@ -53,7 +62,7 @@ class GenerationPipeline:
         draft = (await CVAgent(uid, db).generate(input_data)).content
 
         # Trin 2: ATSAgent gennemgår udkastet
-        await self._emit(queue, 35, "Analyserer ATS-nøgleord..." if da else "Analyzing ATS keywords...")
+        await self._emit(queue, 30, "Analyserer ATS-nøgleord..." if da else "Analyzing ATS keywords...")
         ats_feedback = (await ATSAgent(uid, db).run({
             **job_ctx,
             "draft": draft,
@@ -61,7 +70,7 @@ class GenerationPipeline:
         })).content
 
         # Trin 3: CriticAgent syntetiserer
-        await self._emit(queue, 60, "Syntetiserer feedback..." if da else "Synthesizing feedback...")
+        await self._emit(queue, 50, "Syntetiserer feedback..." if da else "Synthesizing feedback...")
         improvements = (await CriticAgent(uid, db).run({
             "ats_review": ats_feedback,
             "hr_review": "",
@@ -70,12 +79,23 @@ class GenerationPipeline:
             "doc_type": "cv",
         })).content
 
-        # Trin 4: ReviewBoardAgent omskriver til endeligt CV
-        await self._emit(queue, 75, "Omskriver til endeligt CV..." if da else "Rewriting to final CV...")
+        # Trin 4: DesignerAgent producerer template-specifik stilguide
+        await self._emit(queue, 65, f"Tilpasser til {template}-template..." if da else f"Applying {template} template...")
+        design_guide = (await DesignerAgent(uid, db).run({
+            "template": template,
+            "doc_type": "cv",
+            "language": lang,
+            "critic_feedback": improvements,
+            "draft": draft,
+        })).content
+
+        # Trin 5: ReviewBoardAgent omskriver til endeligt CV med stilguide
+        await self._emit(queue, 78, "Omskriver til endeligt CV..." if da else "Rewriting to final CV...")
         final = (await ReviewBoardAgent(uid, db).run({
             "mode": "rewrite",
             "draft": draft,
             "critic_feedback": improvements,
+            "design_guide": design_guide,
             **job_ctx,
         })).content
 
@@ -86,12 +106,14 @@ class GenerationPipeline:
 
     async def generate_application(self, input_data: dict, queue: asyncio.Queue | None = None) -> str:
         """
-        JobAgent → HRAgent + HMAgent + ATSAgent → CriticAgent → ReviewBoardAgent → ApplicationAgent
+        JobAgent → HRAgent + HMAgent + ATSAgent → CriticAgent
+        → DesignerAgent → ReviewBoardAgent → ApplicationAgent
         Returnerer endelig ansøgning som plaintext string.
         """
         uid, db = self.user_id, self.supabase
         job_ctx = self._job_ctx(input_data)
         lang = input_data.get("language", "da")
+        template = input_data.get("template", "corporate")
         da = lang == "da"
 
         # Trin 1: JobAgent analyserer jobopslaget
@@ -100,7 +122,7 @@ class GenerationPipeline:
 
         # Trin 2-4: HR, HM og ATS analyserer hvad den ideelle ansøgning skal indeholde (parallelt)
         await self._emit(
-            queue, 20,
+            queue, 18,
             "Perspektiverer fra HR, Hiring Manager og ATS..." if da
             else "Gathering HR, HM and ATS perspectives...",
         )
@@ -117,7 +139,7 @@ class GenerationPipeline:
         )
 
         # Trin 5: CriticAgent syntetiserer til must-haves
-        await self._emit(queue, 50, "Syntetiserer krav..." if da else "Synthesizing requirements...")
+        await self._emit(queue, 45, "Syntetiserer krav..." if da else "Synthesizing requirements...")
         must_haves = (await CriticAgent(uid, db).run({
             "ats_review": ats_out.content,
             "hr_review": hr_out.content,
@@ -126,21 +148,34 @@ class GenerationPipeline:
             "doc_type": "cover_letter",
         })).content
 
-        # Trin 6: ReviewBoardAgent producerer skrivebrief
+        # Trin 6: DesignerAgent producerer template-specifik stilguide
         await self._emit(
-            queue, 65,
+            queue, 60,
+            f"Tilpasser til {template}-template..." if da else f"Applying {template} template...",
+        )
+        design_guide = (await DesignerAgent(uid, db).run({
+            "template": template,
+            "doc_type": "cover_letter",
+            "language": lang,
+            "critic_feedback": must_haves,
+        })).content
+
+        # Trin 7: ReviewBoardAgent producerer skrivebrief
+        await self._emit(
+            queue, 72,
             "Udformer skriveinstruktioner..." if da else "Preparing writing brief...",
         )
         writing_brief = (await ReviewBoardAgent(uid, db).run({
             "mode": "brief",
             "job_analysis": job_analysis,
             "must_haves": must_haves,
+            "design_guide": design_guide,
             **job_ctx,
         })).content
 
-        # Trin 7: ApplicationAgent skriver den endelige ansøgning
+        # Trin 8: ApplicationAgent skriver den endelige ansøgning
         await self._emit(
-            queue, 80,
+            queue, 83,
             "Skriver endelig ansøgning..." if da else "Writing final application...",
         )
         final = (await ApplicationAgent(uid, db).run(

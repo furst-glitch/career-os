@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPut, apiDelete, apiStream } from "@/lib/api";
 
@@ -482,19 +483,25 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMa
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 italic">{job.notes}</p>
       )}
 
-      {/* Quick-gen knapper */}
+      {/* Quick-gen og Auto Apply */}
       <div className="mt-3 flex gap-2">
+        <Link
+          href={`/apply/${job.id}`}
+          className="flex-1 rounded-lg border border-emerald-200 bg-emerald-50 py-1.5 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+        >
+          Auto Apply ✦
+        </Link>
         <button
           onClick={() => onQuickGen(job)}
           className="flex-1 rounded-lg border border-blue-200 bg-blue-50 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
         >
-          Genér CV
+          Hurtig CV
         </button>
         <button
           onClick={() => onQuickGen(job)}
           className="flex-1 rounded-lg border border-indigo-200 bg-indigo-50 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
         >
-          Genér ansøgning
+          Hurtig ansøgning
         </button>
         {job.pipeline_id && ["cv_genereret", "ansoegning_genereret"].includes(job.pipeline_status ?? "") && (
           <button

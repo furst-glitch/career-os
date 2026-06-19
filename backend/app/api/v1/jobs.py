@@ -234,6 +234,18 @@ async def quickgen(
         else f"Ansøgning — {job.get('title')} hos {job.get('company')}"
     )
 
+    # Hent brugerens valgte template fra Indstillinger → Layout
+    try:
+        prefs_row = supabase.table("user_profiles").select(
+            "default_cv_template, default_app_template"
+        ).eq("user_id", user["id"]).limit(1).execute()
+        prefs = prefs_row.data[0] if prefs_row.data else {}
+    except Exception:
+        prefs = {}
+    user_template = prefs.get("default_cv_template" if is_cv else "default_app_template") or (
+        "ats_professional" if is_cv else "corporate"
+    )
+
     async def process():
         queue: asyncio.Queue = asyncio.Queue()
 
@@ -251,6 +263,7 @@ async def quickgen(
                     "writing_style": body.writing_style,
                     "focus_areas": body.focus_areas,
                     "doc_type": body.doc_type,
+                    "template": user_template,
                 }
                 if is_cv:
                     content = await pipeline.generate_cv(gen_input, queue=queue)
