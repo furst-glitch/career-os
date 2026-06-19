@@ -5,6 +5,7 @@ GET /cache/stats  — hit/miss rates, backend info
 DELETE /cache/user — invalidate all cached data for the calling user
 """
 from fastapi import APIRouter, Depends
+
 from app.core.deps import get_current_user
 from app.services.cache_service import get_cache, get_sync_cache, invalidate_user
 

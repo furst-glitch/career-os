@@ -4,6 +4,7 @@ Dashboard API — aggregated view for Dashboard 2.0
 GET /dashboard/summary   — all dashboard widgets in one call
 """
 from fastapi import APIRouter, Depends
+
 from app.core.deps import get_current_user, get_supabase_admin
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])

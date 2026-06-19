@@ -5,6 +5,7 @@ GET /analytics/summary   — full dashboard metrics
 GET /analytics/matchscore — match score history
 """
 from fastapi import APIRouter, Depends
+
 from app.core.deps import get_current_user, get_supabase_admin
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])

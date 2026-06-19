@@ -12,7 +12,6 @@ cv_data keys:
 """
 from __future__ import annotations
 
-import io
 import textwrap
 from datetime import datetime
 
@@ -149,7 +148,6 @@ def cv_pdf_ats(cv_data: dict) -> bytes:
 def cv_pdf_modern(cv_data: dict) -> bytes:
     """Navy sidebar (35%) + white main column, blue accents."""
     from fpdf import FPDF
-    from fpdf.enums import XPos, YPos
 
     SB_X = 0          # sidebar left edge (full-bleed)
     SB_W = 68         # sidebar width mm

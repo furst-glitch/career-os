@@ -2,7 +2,7 @@
 ATS Agent — analyserer om et dokument passerer Applicant Tracking Systems.
 Returnerer konkrete forbedringer: manglende nøgleord, formatering, matchprocent.
 """
-from app.agents.base import BaseAgent, AgentResult, AgentUsage
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider
 
 

@@ -9,10 +9,9 @@ from datetime import datetime
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
-from docx.oxml import OxmlElement
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,7 +42,7 @@ def _set_cell_bg(cell, rgb: tuple) -> None:
     shd = OxmlElement("w:shd")
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:color"), "auto")
-    hex_color = "%02X%02X%02X" % rgb
+    hex_color = "{:02X}{:02X}{:02X}".format(*rgb)
     shd.set(qn("w:fill"), hex_color)
     tcPr.append(shd)
 
@@ -65,7 +64,7 @@ def _add_hr(doc: Document, color: tuple = (180, 180, 180), width: int = 6) -> No
     bottom.set(qn("w:val"), "single")
     bottom.set(qn("w:sz"), str(width))
     bottom.set(qn("w:space"), "0")
-    bottom.set(qn("w:color"), "%02X%02X%02X" % color)
+    bottom.set(qn("w:color"), "{:02X}{:02X}{:02X}".format(*color))
     pBdr.append(bottom)
     pPr.append(pBdr)
 
@@ -242,8 +241,8 @@ def cv_docx_modern(cv_data: dict) -> bytes:
         r2.font.color.rgb = _rgb(ACC)
 
     # Two-column body: sidebar | main
-    SB_W = Inches(2.4)
-    MAIN_W = Inches(5.0)
+    Inches(2.4)
+    Inches(5.0)
 
     doc.add_paragraph()  # spacer
 

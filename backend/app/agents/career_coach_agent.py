@@ -3,7 +3,7 @@ Career Coach Agent — analyserer karrierevej og giver strategiske anbefalinger.
 """
 from __future__ import annotations
 
-from app.agents.base import BaseAgent, AgentResult, AgentUsage
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider, NoProviderKeyError
 
 

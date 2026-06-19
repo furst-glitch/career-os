@@ -147,9 +147,9 @@ async def update_application(
 
     # Auto-generer interviewforberedelse ved samtale 1 og 2
     if body.current_status in INTERVIEW_STATUSES:
-        from fastapi import BackgroundTasks
-        from app.services.interview_prep_service import generate_interview_prep
         import asyncio
+
+        from app.services.interview_prep_service import generate_interview_prep
         asyncio.create_task(
             generate_interview_prep(user["id"], pipeline_id, body.current_status, supabase)
         )
@@ -302,7 +302,7 @@ async def generate_cover_letter(
                     task.cancel()
                     return
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": ping\n\n"
 
         doc = svc.save_cover_letter(

@@ -3,12 +3,12 @@ import logging.config
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+
+from app.api.v1 import api_router
 from app.core.config import settings
 from app.core.rate_limit import limiter, rate_limit_handler
-from app.api.v1 import api_router
 
 # ── Structured logging ────────────────────────────────────────────────────────
 
@@ -90,6 +90,7 @@ app.add_middleware(
 
 import time
 
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.monotonic()
@@ -110,7 +111,7 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/health", tags=["System"])
 async def health() -> dict:
-    from app.core.security import encrypt, decrypt
+    from app.core.security import decrypt, encrypt
     try:
         assert decrypt(encrypt("ping")) == "ping"
         crypto = "ok"

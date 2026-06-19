@@ -55,6 +55,14 @@ target-version = "py312"
 select = ["E", "F", "I", "UP"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# DOCX/export template files bruger intentionelle semikoloner til kompakt XML-formatering
+"app/services/app_export_templates.py" = ["E701", "E702", "UP031"]
+"app/services/cv_docx_templates.py" = ["E702", "E701"]
+# Disse filer bruger lazy imports midt i filen for at undgå cirkulære imports
+"app/api/v1/export.py" = ["E402"]
+"app/main.py" = ["E402"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

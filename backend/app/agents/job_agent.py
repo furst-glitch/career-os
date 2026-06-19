@@ -1,4 +1,4 @@
-from app.agents.base import BaseAgent, AgentResult
+from app.agents.base import AgentResult, BaseAgent
 
 
 class JobAgent(BaseAgent):

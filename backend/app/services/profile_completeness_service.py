@@ -19,9 +19,8 @@ Vægtet overall score:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
 
 SECTION_WEIGHTS: dict[str, float] = {
     "experiences":    0.20,
@@ -106,7 +105,7 @@ class ProfileCompletenessService:
             "skills":         result["sections"]["skills"],
             "overall":        result["overall"],
             "missing_areas":  result["missing_areas"],
-            "calculated_at":  datetime.now(timezone.utc).isoformat(),
+            "calculated_at":  datetime.now(UTC).isoformat(),
         }, on_conflict="user_id").execute()
 
         return result

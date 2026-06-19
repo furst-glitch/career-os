@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from supabase import Client
 
@@ -593,9 +593,9 @@ Tone: Professionel, aktiv stemme, præcis. Ingen klichéer."""
         leadership = profile.get("leadership") or []
         if leadership:
             ldr_block = "LEDERSKAB:\n" + "\n".join(
-                f"  {l.get('title')}: {l.get('scope', '')} — "
-                f"{l.get('direct_reports', 0)} direkte rapporterende"
-                for l in leadership
+                f"  {ldr.get('title')}: {ldr.get('scope', '')} — "
+                f"{ldr.get('direct_reports', 0)} direkte rapporterende"
+                for ldr in leadership
             )
             sections.append(ldr_block)
 

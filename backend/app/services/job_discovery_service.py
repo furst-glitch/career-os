@@ -10,9 +10,9 @@ from typing import Any
 
 from supabase import Client
 
+from app.services.job_service import JobService
 from app.services.job_sources import DEFAULT_SOURCES, SOURCES, JobResult
 from app.services.memory_snapshot_service import MemorySnapshotService
-from app.services.job_service import JobService
 
 logger = logging.getLogger(__name__)
 

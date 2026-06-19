@@ -1,5 +1,5 @@
-from app.core.security import decrypt, encrypt
 from app.core.deps import get_supabase_admin
+from app.core.security import decrypt, encrypt
 
 
 class KeyManager:

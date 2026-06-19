@@ -1,7 +1,7 @@
 """
 HR Agent — vurderer tone, kulturelt fit og kommunikationsstil i ansøgning/CV.
 """
-from app.agents.base import BaseAgent, AgentResult, AgentUsage
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider
 
 

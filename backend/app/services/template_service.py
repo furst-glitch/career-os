@@ -1,7 +1,7 @@
 """P3: Document Template Service."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from supabase import Client
 
@@ -52,7 +52,7 @@ class TemplateService:
     def update_template(self, user_id: str, template_id: str, data: dict) -> dict | None:
         allowed = {"name", "type", "language", "content", "writing_style", "focus_areas"}
         patch = {k: v for k, v in data.items() if k in allowed}
-        patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+        patch["updated_at"] = datetime.now(UTC).isoformat()
         rows = (
             self.db.table("document_templates")
             .update(patch)

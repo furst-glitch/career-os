@@ -79,7 +79,7 @@ async def welcome_message(
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"
                     continue
                 if kind == "done":
@@ -161,7 +161,7 @@ async def send_message(
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Still waiting for LLM — send SSE comment to keep connection open
                     yield ": ping\n\n"
                     continue

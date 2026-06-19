@@ -113,10 +113,10 @@ async def upload_cv(
                         task.cancel()
                         return
                     break
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     ping_count += 1
                     pct = min(20 + ping_count * 3, 70)
-                    yield f": ping\n\n"
+                    yield ": ping\n\n"
                     # Update progress pct every ~15s (every 3rd ping)
                     if ping_count % 3 == 0:
                         yield _prog("ai_parse", pct, f"AI analyserer... ({ping_count * 5}s)")
@@ -217,7 +217,7 @@ async def generate_master_cv(
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"
                     continue
                 if kind == "done":

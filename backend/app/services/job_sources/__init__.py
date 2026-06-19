@@ -1,6 +1,6 @@
 from .base import BaseJobSource, JobResult
-from .jobnet import JobnetSource
 from .jobindex import JobindexSource
+from .jobnet import JobnetSource
 from .ofir import OfirSource
 
 # Registry: source_name -> class

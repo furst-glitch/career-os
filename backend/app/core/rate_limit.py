@@ -17,10 +17,11 @@ Override with env RATE_LIMIT_MULTIPLIER=2 to double all limits (staging).
 from __future__ import annotations
 
 import os
+
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
-from fastapi.responses import JSONResponse
 
 
 def _key_func(request: Request) -> str:

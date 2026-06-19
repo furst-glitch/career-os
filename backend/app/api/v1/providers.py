@@ -92,8 +92,8 @@ async def diagnose_chain(user=Depends(get_current_user)):
     Kører BYOK-kæden trin for trin og returnerer nøjagtigt hvor den fejler.
     Kræver login. Sletter testdata igen efter testen.
     """
-    from app.core.security import encrypt, decrypt
     from app.core.deps import get_supabase_admin
+    from app.core.security import decrypt, encrypt
 
     steps: dict[str, dict] = {}
 

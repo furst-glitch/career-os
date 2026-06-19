@@ -202,10 +202,12 @@ async def quickgen(
     """
     import asyncio
     import json as _json
-    from app.services.application_service import ApplicationService
+
+    from fastapi.responses import StreamingResponse
+
     from app.agents.application_agent import ApplicationAgent
     from app.providers.litellm_provider import NoProviderKeyError
-    from fastapi.responses import StreamingResponse
+    from app.services.application_service import ApplicationService
 
     if body.doc_type not in ("cover_letter", "cv"):
         raise HTTPException(400, "doc_type skal være 'cover_letter' eller 'cv'")
@@ -274,7 +276,7 @@ async def quickgen(
                     task.cancel()
                     return
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": ping\n\n"
 
         doc = app_svc.save_cover_letter(

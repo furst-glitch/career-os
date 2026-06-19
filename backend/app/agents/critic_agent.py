@@ -2,7 +2,7 @@
 Critic Agent — syntetiserer feedback fra ATS, HR og Hiring Manager
 til en prioriteret liste af de vigtigste forbedringer.
 """
-from app.agents.base import BaseAgent, AgentResult, AgentUsage
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider
 
 

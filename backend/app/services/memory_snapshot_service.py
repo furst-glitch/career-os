@@ -13,16 +13,16 @@ Cache-strategi:
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from supabase import Client
 
-from app.services.memory_service import MemoryService
 from app.services.cache_service import (
     TTL_SNAPSHOT,
     get_sync_cache,
     key_snapshot,
 )
+from app.services.memory_service import MemoryService
 
 # L1: process-level dict  {user_id: (snapshot, expires_monotonic)}
 _L1: dict[str, tuple[dict, float]] = {}
@@ -72,7 +72,7 @@ class MemorySnapshotService:
         memories    = self.mem.list_memories(user_id, limit=15)
 
         result = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "user_id":      user_id,
             "profile":      profile,
             "experience":   experience,

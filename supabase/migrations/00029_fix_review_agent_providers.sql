@@ -7,7 +7,7 @@
 
 UPDATE public.agent_registry
 SET
-    default_provider = 'anthropic',
+    default_provider = 'anthropic'::ai_provider,
     default_model    = 'claude-haiku-4-5-20251001',
     timeout_seconds  = 30
 WHERE name IN ('ats_agent', 'hr_agent', 'hiring_manager_agent', 'critic_agent');

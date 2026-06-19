@@ -204,7 +204,7 @@ def _cv_content_to_pdf(cv_data: dict) -> bytes:
 def _docx_from_text(title: str, content: str) -> bytes:
     """Genererer DOCX fra plain-text/markdown indhold."""
     from docx import Document
-    from docx.shared import Pt, RGBColor, Inches
+    from docx.shared import Inches, Pt, RGBColor
 
     doc = Document()
     for section in doc.sections:
@@ -253,7 +253,7 @@ def _docx_from_text(title: str, content: str) -> bytes:
 def _cv_content_to_docx(cv_data: dict) -> bytes:
     """Struktureret DOCX fra CV-data-dict."""
     from docx import Document
-    from docx.shared import Pt, RGBColor, Inches
+    from docx.shared import Inches, Pt, RGBColor
 
     doc = Document()
     for section in doc.sections:

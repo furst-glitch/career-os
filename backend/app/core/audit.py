@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from supabase import Client
 
 
@@ -16,5 +17,5 @@ async def log_action(
         "resource_type": resource_type,
         "resource_id": resource_id,
         "metadata": metadata or {},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }).execute()

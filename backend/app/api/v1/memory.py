@@ -15,7 +15,6 @@ GET/PUT    /memory/preferences         — career_preferences upsert
 
 GET        /memory/snapshot            — komplet agent-snapshot (F5)
 """
-import asyncio
 
 from fastapi import APIRouter, Depends, Query
 
@@ -35,8 +34,9 @@ def _svc(supabase) -> MemoryService:
 async def _generate_embedding(text: str, user_id: str, supabase) -> list[float] | None:
     """Genererer embedding via litellm. Returnerer None ved fejl / manglende nøgle."""
     try:
-        from app.providers.key_manager import KeyManager
         import litellm
+
+        from app.providers.key_manager import KeyManager
 
         api_key = await KeyManager.get_key(user_id, "openai")
         if not api_key:

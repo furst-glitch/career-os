@@ -7,7 +7,8 @@ POST   /notifications/read-all  — mark all as read
 DELETE /notifications/{id}      — delete
 GET    /notifications/count     — unread count (for badge)
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
 from app.core.deps import get_current_user, get_supabase_admin
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])

@@ -1,5 +1,6 @@
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, Header, HTTPException
 from supabase import Client, create_client
+
 from app.core.config import settings
 
 

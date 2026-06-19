@@ -1,7 +1,7 @@
 """
 Hiring Manager Agent — vurderer professionel relevans, resultater og teknisk match.
 """
-from app.agents.base import BaseAgent, AgentResult, AgentUsage
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider
 
 

@@ -435,20 +435,20 @@ def _rgb(tup: tuple):
 
 
 def _set_cell_bg(cell, rgb: tuple) -> None:
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     shd = OxmlElement("w:shd")
     shd.set(qn("w:val"), "clear")
     shd.set(qn("w:color"), "auto")
-    shd.set(qn("w:fill"), "%02X%02X%02X" % rgb)
+    shd.set(qn("w:fill"), "{:02X}{:02X}{:02X}".format(*rgb))
     tcPr.append(shd)
 
 
 def _para_space(para, before: int = 0, after: int = 0) -> None:
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     pPr = para._p.get_or_add_pPr()
     spacing = OxmlElement("w:spacing")
     spacing.set(qn("w:before"), str(before))
@@ -457,8 +457,8 @@ def _para_space(para, before: int = 0, after: int = 0) -> None:
 
 
 def _add_hr_docx(doc, color: tuple = (180, 180, 180), width: int = 6) -> None:
-    from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     para = doc.add_paragraph()
     _para_space(para, 0, 0)
     pPr = para._p.get_or_add_pPr()
@@ -467,7 +467,7 @@ def _add_hr_docx(doc, color: tuple = (180, 180, 180), width: int = 6) -> None:
     bottom.set(qn("w:val"), "single")
     bottom.set(qn("w:sz"), str(width))
     bottom.set(qn("w:space"), "0")
-    bottom.set(qn("w:color"), "%02X%02X%02X" % color)
+    bottom.set(qn("w:color"), "{:02X}{:02X}{:02X}".format(*color))
     pBdr.append(bottom)
     pPr.append(pBdr)
 
@@ -564,8 +564,8 @@ def app_docx_corporate(title: str, content: str, applicant_name: str = "",
 def app_docx_executive(title: str, content: str, applicant_name: str = "",
                         company_name: str = "") -> bytes:
     from docx import Document
-    from docx.shared import Inches, Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, Pt
 
     GOLD = (140, 90, 20)
     DARK = (10, 15, 35)
