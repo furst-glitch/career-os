@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CompletenessScore } from "@/components/CompletenessScore";
+import { CvTemplateSelector, type CvTemplate } from "@/components/TemplateSelector";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,9 +55,17 @@ export default function MasterCVPage() {
   const [copied, setCopied]         = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
+  const [cvTemplate, setCvTemplate]   = useState<CvTemplate>("ats_professional");
+  const [showTempl, setShowTempl]     = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+    // Load saved template preference
+    apiGet<{ default_cv_template: string }>("/export/preferences")
+      .then(p => { if (p.default_cv_template) setCvTemplate(p.default_cv_template as CvTemplate); })
+      .catch(() => {});
+  }, []);
 
   function showToast(msg: string, ok = true) {
     setToast({ msg, ok });
@@ -189,13 +198,13 @@ export default function MasterCVPage() {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
       const base = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-      const url = `${base}/api/v1/export/cv/${format}`;
+      const url = `${base}/api/v1/export/cv/${format}?template=${cvTemplate}`;
       const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (!res.ok) { showToast("Download fejlede", false); return; }
       const blob = await res.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `master_cv.${format}`;
+      link.download = `master_cv_${cvTemplate}.${format}`;
       link.click();
       URL.revokeObjectURL(link.href);
       showToast(`CV downloadet som ${format.toUpperCase()}`);
@@ -287,13 +296,8 @@ export default function MasterCVPage() {
               </Button>
             )}
             {content && (
-              <Button variant="outline" size="sm" loading={downloading === "pdf"} onClick={downloadCvPdf}>
-                {downloading === "pdf" ? "Henter…" : "PDF ↓"}
-              </Button>
-            )}
-            {content && (
-              <Button variant="outline" size="sm" loading={downloading === "docx"} onClick={downloadCvDocx}>
-                {downloading === "docx" ? "Henter…" : "DOCX ↓"}
+              <Button variant="outline" size="sm" onClick={() => setShowTempl(true)}>
+                Download ↓
               </Button>
             )}
             {content && (
@@ -386,6 +390,53 @@ export default function MasterCVPage() {
             <h2 className="mb-4 text-sm font-semibold text-slate-200">Profil fuldstændighed</h2>
             <CompletenessScore />
           </div>
+
+          {/* Template selector */}
+          <Card padding="sm">
+            <CardHeader>
+              <CardTitle>Template</CardTitle>
+              <button
+                onClick={() => setShowTempl(v => !v)}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                {showTempl ? "Skjul" : "Vælg"}
+              </button>
+            </CardHeader>
+            <p className="mt-1 text-xs text-slate-400">
+              Aktiv: <span className="font-medium text-slate-600">{cvTemplate.replace(/_/g, " ")}</span>
+            </p>
+            {showTempl && (
+              <div className="mt-3">
+                <CvTemplateSelector
+                  selected={cvTemplate}
+                  onSelect={t => { setCvTemplate(t); }}
+                  columns={3}
+                />
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    loading={downloading === "pdf"}
+                    onClick={downloadCvPdf}
+                    disabled={!content}
+                  >
+                    PDF ↓
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    loading={downloading === "docx"}
+                    onClick={downloadCvDocx}
+                    disabled={!content}
+                  >
+                    DOCX ↓
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
 
           {/* Version history */}
           <Card padding="sm">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CvTemplateSelector, AppTemplateSelector, type CvTemplate, type AppTemplate } from "@/components/TemplateSelector";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -264,9 +265,94 @@ function ApiKeysTab() {
   );
 }
 
+// ── Dokumenter Tab ────────────────────────────────────────────────────────────
+
+function DokumenterTab() {
+  const [cvTpl, setCvTpl]     = useState<CvTemplate>("ats_professional");
+  const [appTpl, setAppTpl]   = useState<AppTemplate>("corporate");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+  const [err, setErr]         = useState("");
+
+  useEffect(() => {
+    apiGet<{ default_cv_template: string; default_app_template: string }>("/export/preferences")
+      .then(p => {
+        if (p.default_cv_template) setCvTpl(p.default_cv_template as CvTemplate);
+        if (p.default_app_template) setAppTpl(p.default_app_template as AppTemplate);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      await apiPut("/export/preferences", {
+        default_cv_template: cvTpl,
+        default_app_template: appTpl,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Kunne ikke gemme");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* CV templates */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Standard CV-template</CardTitle>
+        </CardHeader>
+        <p className="mt-1 mb-4 text-xs text-slate-500">
+          Bruges som standard ved download fra Master CV-siden. Du kan altid vælge et andet template ved download.
+        </p>
+        <CvTemplateSelector selected={cvTpl} onSelect={setCvTpl} columns={5} />
+      </Card>
+
+      {/* Application templates */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Standard ansøgnings-template</CardTitle>
+        </CardHeader>
+        <p className="mt-1 mb-4 text-xs text-slate-500">
+          Bruges som standard ved download af ansøgninger og breve.
+        </p>
+        <AppTemplateSelector selected={appTpl} onSelect={setAppTpl} columns={5} />
+      </Card>
+
+      {/* Save + feedback */}
+      {err && (
+        <p className="text-sm text-red-600">✗ {err}</p>
+      )}
+      {saved && (
+        <p className="text-sm text-green-600">✓ Template-præferencer gemt</p>
+      )}
+      <div className="flex justify-end border-t border-slate-100 pt-4">
+        <Button loading={saving} onClick={save}>Gem template-valg</Button>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = "job" | "ai" | "keys";
+type Tab = "job" | "ai" | "keys" | "docs";
 
 export default function SettingsPage() {
   const [tab, setTab]       = useState<Tab>("job");
@@ -319,7 +405,7 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Indstillinger</h1>
           <p className="mt-1 text-sm text-slate-500">Dine karrierepræferencer bruges af alle agenter til personaliserede anbefalinger</p>
         </div>
-        {tab !== "keys" && <Button loading={saving} onClick={save}>Gem præferencer</Button>}
+        {tab !== "keys" && tab !== "docs" && <Button loading={saving} onClick={save}>Gem præferencer</Button>}
       </div>
 
       {/* Tabs */}
@@ -328,6 +414,7 @@ export default function SettingsPage() {
           { key: "job",  label: "Jobpræferencer" },
           { key: "ai",   label: "AI-præferencer" },
           { key: "keys", label: "API-nøgler" },
+          { key: "docs", label: "Dokumenter" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
@@ -479,7 +566,10 @@ export default function SettingsPage() {
       {/* ── API Keys ── */}
       {tab === "keys" && <ApiKeysTab />}
 
-      {tab !== "keys" && (
+      {/* ── Dokumenter ── */}
+      {tab === "docs" && <DokumenterTab />}
+
+      {tab !== "keys" && tab !== "docs" && (
         <div className="flex justify-end border-t border-slate-100 pt-4">
           <Button loading={saving} onClick={save}>Gem præferencer</Button>
         </div>

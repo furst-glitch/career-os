@@ -327,17 +327,33 @@ def _cv_content_to_docx(cv_data: dict) -> bytes:
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
-def export_text_as_pdf(title: str, content: str) -> bytes:
-    return _pdf_from_text(title, content)
+def export_text_as_pdf(
+    title: str,
+    content: str,
+    template: str = "corporate",
+    applicant_name: str = "",
+    company_name: str = "",
+) -> bytes:
+    from app.services.app_export_templates import render_app_pdf
+    return render_app_pdf(title, content, template, applicant_name, company_name)
 
 
-def export_text_as_docx(title: str, content: str) -> bytes:
-    return _docx_from_text(title, content)
+def export_text_as_docx(
+    title: str,
+    content: str,
+    template: str = "corporate",
+    applicant_name: str = "",
+    company_name: str = "",
+) -> bytes:
+    from app.services.app_export_templates import render_app_docx
+    return render_app_docx(title, content, template, applicant_name, company_name)
 
 
-def export_cv_as_pdf(cv_data: dict) -> bytes:
-    return _cv_content_to_pdf(cv_data)
+def export_cv_as_pdf(cv_data: dict, template: str = "ats_professional") -> bytes:
+    from app.services.cv_pdf_templates import render_cv_pdf
+    return render_cv_pdf(cv_data, template)
 
 
-def export_cv_as_docx(cv_data: dict) -> bytes:
-    return _cv_content_to_docx(cv_data)
+def export_cv_as_docx(cv_data: dict, template: str = "ats_professional") -> bytes:
+    from app.services.cv_docx_templates import render_cv_docx
+    return render_cv_docx(cv_data, template)
