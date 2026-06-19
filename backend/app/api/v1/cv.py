@@ -8,11 +8,12 @@ POST /cv/master/generate      Generer Master CV (SSE streaming)
 """
 import os
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agents.cv_agent import CVAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.services.automation_service import on_cv_uploaded
 from app.services.cv_service import CVService, extract_text
 from app.services.discovery_service import DiscoveryService
 
@@ -36,6 +37,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 @router.post("/upload")
 async def upload_cv(
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
@@ -80,6 +82,9 @@ async def upload_cv(
 
         # Populér profil-tabeller + opret discovery session
         session_id = await cv_service.populate_profile_from_parsed(user_id, upload_id, parsed)
+
+        # Background: refresh career memory snapshot
+        background_tasks.add_task(on_cv_uploaded, user_id, supabase)
 
         return {
             "upload_id": upload_id,

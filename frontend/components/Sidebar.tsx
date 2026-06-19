@@ -1,13 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import { CompletenessScore } from "@/components/CompletenessScore";
 import { cn } from "@/lib/utils";
+import { apiGet, apiPost } from "@/lib/api";
+
+interface Notification {
+  id: string; title: string; body: string; is_read: boolean; created_at: string; event_type: string;
+}
 
 const NAV = [
+  {
+    label: "Dashboard",
+    href: "/dashboard",
+    exact: true,
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
+    ),
+  },
   {
     label: "CV Upload",
     href: "/cv",
@@ -128,6 +144,145 @@ const NAV = [
   },
 ];
 
+function fmtDate(iso: string) {
+  const d = new Date(iso);
+  const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diff === 0) return "I dag";
+  if (diff === 1) return "I går";
+  if (diff < 7) return `${diff}d`;
+  return d.toLocaleDateString("da-DK", { day: "numeric", month: "short" });
+}
+
+// ── Notification Bell ─────────────────────────────────────────────────────────
+
+function NotificationBell() {
+  const [count, setCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Poll unread count every 60s
+  useEffect(() => {
+    function fetchCount() {
+      apiGet<{ count: number }>("/notifications/count")
+        .then(r => setCount(r.count))
+        .catch(() => {});
+    }
+    fetchCount();
+    const t = setInterval(fetchCount, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Load notifications when opened
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    apiGet<{ notifications: Notification[] }>("/notifications?limit=10")
+      .then(r => setNotifications(r.notifications ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  async function markRead(id: string) {
+    await apiPost(`/notifications/${id}/read`, {});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setCount(prev => Math.max(0, prev - 1));
+  }
+
+  async function markAllRead() {
+    await apiPost("/notifications/read-all", {});
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setCount(0);
+  }
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+        aria-label="Notifikationer"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        {count > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute bottom-10 left-0 z-50 w-80 rounded-xl border border-slate-700 bg-slate-800 shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-700 px-4 py-2.5">
+            <span className="text-sm font-semibold text-white">Notifikationer</span>
+            {count > 0 && (
+              <button onClick={markAllRead} className="text-xs text-blue-400 hover:text-blue-300">
+                Marker alle læst
+              </button>
+            )}
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            {loading ? (
+              <p className="px-4 py-6 text-center text-xs text-slate-400">Henter...</p>
+            ) : notifications.length === 0 ? (
+              <p className="px-4 py-6 text-center text-xs text-slate-400">Ingen notifikationer</p>
+            ) : (
+              notifications.map(n => (
+                <button
+                  key={n.id}
+                  onClick={() => !n.is_read && markRead(n.id)}
+                  className={cn(
+                    "w-full border-b border-slate-700 px-4 py-3 text-left transition-colors last:border-0",
+                    n.is_read ? "opacity-60 hover:bg-slate-750" : "hover:bg-slate-700"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    {!n.is_read && (
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" />
+                    )}
+                    <div className={cn("min-w-0", n.is_read && "ml-3.5")}>
+                      <p className="text-xs font-semibold text-slate-200 leading-tight">{n.title}</p>
+                      {n.body && (
+                        <p className="mt-0.5 text-xs text-slate-400 line-clamp-2">{n.body}</p>
+                      )}
+                      <p className="mt-1 text-[10px] text-slate-500">{fmtDate(n.created_at)}</p>
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="border-t border-slate-700 px-4 py-2">
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className="block text-center text-xs text-blue-400 hover:text-blue-300"
+            >
+              Se alle i Dashboard →
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -159,7 +314,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-0.5 px-3 py-4">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
         {NAV.map((item) => {
           const isActive = item.exact
             ? pathname === item.href
@@ -187,18 +342,21 @@ export function Sidebar() {
         <CompletenessScore compact={false} />
       </div>
 
-      {/* User */}
+      {/* User + notification bell */}
       <div className="border-t border-slate-800 px-4 py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-xs text-slate-400">{userEmail ?? "..."}</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="shrink-0 rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300"
-          >
-            Log ud
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <NotificationBell />
+            <button
+              onClick={handleLogout}
+              className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+            >
+              Log ud
+            </button>
+          </div>
         </div>
       </div>
     </aside>

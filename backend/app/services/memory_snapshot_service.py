@@ -7,11 +7,16 @@ Standardinput til:
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 from supabase import Client
 
 from app.services.memory_service import MemoryService
+
+# Process-level TTL cache: {user_id: (snapshot_dict, expires_at_ts)}
+_SNAPSHOT_CACHE: dict[str, tuple[dict, float]] = {}
+_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
 class MemorySnapshotService:
@@ -19,7 +24,18 @@ class MemorySnapshotService:
         self.db = supabase
         self.mem = MemoryService(supabase)
 
-    def snapshot(self, user_id: str) -> dict:
+    def invalidate(self, user_id: str) -> None:
+        _SNAPSHOT_CACHE.pop(user_id, None)
+
+    def snapshot(self, user_id: str, force: bool = False) -> dict:
+        """Returner komplet, agent-optimeret snapshot af brugerens karriereviden.
+        Cached for _CACHE_TTL_SECONDS. Pass force=True to bypass cache."""
+        now = time.monotonic()
+        if not force and user_id in _SNAPSHOT_CACHE:
+            cached, expires = _SNAPSHOT_CACHE[user_id]
+            if now < expires:
+                return cached
+
         """Returner komplet, agent-optimeret snapshot af brugerens karriereviden."""
         mcv_id = self._mcv_id(user_id)
 
@@ -33,7 +49,7 @@ class MemorySnapshotService:
         preferences = self.mem.get_preferences(user_id)
         memories    = self.mem.list_memories(user_id, limit=15)
 
-        return {
+        result = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "user_id":      user_id,
             "profile":      profile,
@@ -48,6 +64,9 @@ class MemorySnapshotService:
             # Kompakt tekstrepræsentation til prompt-injection
             "text_summary": self._text_summary(profile, experience, skills, goals, preferences, milestones),
         }
+        # Store in cache
+        _SNAPSHOT_CACHE[user_id] = (result, now + _CACHE_TTL_SECONDS)
+        return result
 
     # ─── Private helpers ──────────────────────────────────────────────────────
 

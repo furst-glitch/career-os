@@ -10,9 +10,10 @@ DELETE /jobs/{id}             — slet job
 POST   /jobs/{id}/save        — toggle is_saved
 GET    /jobs/{id}/match       — beregn frisk match score
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.core.deps import get_current_user, get_supabase_admin
+from app.services.automation_service import on_job_saved
 from app.services.job_service import JobService
 from app.services.memory_snapshot_service import MemorySnapshotService
 
@@ -132,11 +133,16 @@ async def delete_job(
 @router.post("/{job_id}/save")
 async def toggle_save(
     job_id: str,
+    background_tasks: BackgroundTasks,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
     try:
-        return _svc(supabase).toggle_save(job_id, user["id"])
+        result = _svc(supabase).toggle_save(job_id, user["id"])
+        # Auto-create draft pipeline entry when job is saved
+        if result.get("is_saved"):
+            background_tasks.add_task(on_job_saved, user["id"], job_id, supabase)
+        return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

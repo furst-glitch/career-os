@@ -11,11 +11,12 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 
 from app.agents.job_discovery_agent import JobDiscoveryAgent
 from app.core.deps import get_current_user, get_supabase_admin
+from app.services.automation_service import on_job_discovered
 from app.services.job_discovery_service import JobDiscoveryService
 from app.services.job_sources import DEFAULT_SOURCES, SOURCES
 
@@ -82,11 +83,23 @@ async def get_history(
 @router.post("/save")
 async def save_result(
     body: SaveRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
     svc = JobDiscoveryService(supabase)
     job = svc.save_result(user["id"], body.result)
+    # Emit high-match notification if score known
+    match_score = int(body.result.get("match_score") or 0)
+    if match_score >= 70:
+        background_tasks.add_task(
+            on_job_discovered,
+            user["id"],
+            body.result.get("title", ""),
+            body.result.get("company", ""),
+            match_score,
+            supabase,
+        )
     return job
 
 
