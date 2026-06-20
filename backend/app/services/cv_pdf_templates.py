@@ -44,6 +44,20 @@ def _period(exp: dict) -> str:
     return f"{start} - {end}" if start else ""
 
 
+def clean_display_url(url: str) -> str:
+    """Decode URL encoding and strip protocol/www prefix for display."""
+    if not url:
+        return ""
+    from urllib.parse import unquote
+    url = unquote(str(url))
+    for prefix in ("https://", "http://"):
+        if url.lower().startswith(prefix):
+            url = url[len(prefix):]
+    if url.lower().startswith("www."):
+        url = url[4:]
+    return url.rstrip("/")
+
+
 # ═══════════════════════════════════════════════════════════════
 # SHARED PARSER
 # ═══════════════════════════════════════════════════════════════
@@ -91,6 +105,32 @@ def _route_blocks(blocks: list[dict]) -> tuple[list[dict], list[dict]]:
             in_left = _is_left_section(b["text"])
         (left if in_left else right).append(b)
     return left, right
+
+
+# Templates that render contact info automatically in header/sidebar.
+# A ## Kontakt / ## Contact section in the AI text would duplicate it.
+HEADER_CONTAINS_CONTACT: frozenset[str] = frozenset([
+    "nordic_executive", "modern_nordic", "bold_impact", "clean_professional",
+])
+
+
+def _filter_blocks_for_template(blocks: list[dict], template_name: str) -> list[dict]:
+    """Remove KONTAKT/CONTACT section from body for templates that have header contact."""
+    if template_name not in HEADER_CONTAINS_CONTACT:
+        return blocks
+    filtered: list[dict] = []
+    skip = False
+    for b in blocks:
+        if b["type"] == "SECTION_HEADER" and b["text"] in (
+            "KONTAKT", "CONTACT", "KONTAKTOPLYSNINGER", "CONTACT INFORMATION",
+        ):
+            skip = True
+            continue
+        if skip and b["type"] == "SECTION_HEADER":
+            skip = False
+        if not skip:
+            filtered.append(b)
+    return filtered
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -225,9 +265,12 @@ class NordicExecutiveTemplate:
         for val in [c.get("email"), c.get("phone"), c.get("location")]:
             if val:
                 contact.append({"type": "BODY_TEXT", "text": _s(val)})
-        li = _s(c.get("linkedin") or "")
+        li = _s(clean_display_url(c.get("linkedin") or c.get("linkedin_url") or ""))
         if li:
             contact.append({"type": "BODY_TEXT", "text": li})
+        ws = _s(clean_display_url(c.get("website") or ""))
+        if ws:
+            contact.append({"type": "BODY_TEXT", "text": ws})
         contact.append({"type": "SPACING", "mm": 3})
         return contact + left_blocks
 
@@ -788,6 +831,7 @@ def render_generated_cv_pdf(
 ) -> bytes:
     cls = GENERATED_CV_TEMPLATES.get(template, NordicExecutiveTemplate)
     blocks = parse_cv_text(text)
+    blocks = _filter_blocks_for_template(blocks, template)
     return cls().render(blocks, candidate)
 
 

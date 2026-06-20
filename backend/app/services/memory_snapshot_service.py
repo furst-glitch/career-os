@@ -24,6 +24,21 @@ from app.services.cache_service import (
 )
 from app.services.memory_service import MemoryService
 
+
+def _clean_url(url: str | None) -> str:
+    """Decode URL encoding and strip protocol/www prefix for display."""
+    if not url:
+        return ""
+    from urllib.parse import unquote
+    url = unquote(url)
+    for prefix in ("https://", "http://"):
+        if url.lower().startswith(prefix):
+            url = url[len(prefix):]
+    if url.lower().startswith("www."):
+        url = url[4:]
+    return url.rstrip("/")
+
+
 # L1: process-level dict  {user_id: (snapshot, expires_monotonic)}
 _L1: dict[str, tuple[dict, float]] = {}
 
@@ -63,6 +78,7 @@ class MemorySnapshotService:
 
         profile     = self._profile(user_id, mcv_id)
         experience  = self._experience(mcv_id)
+        education   = self._education(mcv_id)
         skills      = self._skills(mcv_id)
         certs       = self._certs(mcv_id)
         projects    = self._projects(mcv_id)
@@ -76,6 +92,7 @@ class MemorySnapshotService:
             "user_id":      user_id,
             "profile":      profile,
             "experience":   experience,
+            "education":    education,
             "skills":       skills,
             "certifications": certs,
             "projects":     projects,
@@ -83,7 +100,7 @@ class MemorySnapshotService:
             "milestones":   milestones,
             "preferences":  preferences,
             "recent_memories": memories,
-            "text_summary": self._text_summary(profile, experience, skills, goals, preferences, milestones),
+            "text_summary": self._text_summary(profile, experience, education, skills, goals, preferences, milestones),
         }
 
         # Populate L2 (Redis) then L1
@@ -118,6 +135,7 @@ class MemorySnapshotService:
             "phone":               up.get("phone"),
             "location":            up.get("location"),
             "linkedin_url":        up.get("linkedin_url"),
+            "linkedin_display":    _clean_url(up.get("linkedin_url")),
             "address":             up.get("address"),
             "city":                up.get("city"),
             "postal_code":         up.get("postal_code"),
@@ -157,6 +175,19 @@ class MemorySnapshotService:
         )
         return rows or []
 
+    def _education(self, mcv_id: str | None) -> list[dict]:
+        if not mcv_id:
+            return []
+        rows = (
+            self.db.table("cv_educations")
+            .select("degree, institution, period_start, period_end, description")
+            .eq("master_cv_id", mcv_id)
+            .order("period_start", desc=True)
+            .execute()
+            .data
+        )
+        return rows or []
+
     def _certs(self, mcv_id: str | None) -> list[dict]:
         if not mcv_id:
             return []
@@ -187,6 +218,7 @@ class MemorySnapshotService:
         self,
         profile: dict,
         experience: list,
+        education: list,
         skills: list,
         goals: list,
         prefs: dict,
@@ -202,8 +234,9 @@ class MemorySnapshotService:
             lines.append(f"TELEFON: {profile['phone']}")
         if profile.get("location"):
             lines.append(f"LOKATION: {profile['location']}")
-        if profile.get("linkedin_url"):
-            lines.append(f"LINKEDIN: {profile['linkedin_url']}")
+        li = profile.get("linkedin_display") or profile.get("linkedin_url")
+        if li:
+            lines.append(f"LINKEDIN: {li}")
         if profile.get("website"):
             lines.append(f"WEBSITE: {profile['website']}")
         if profile.get("salary_expectation"):
@@ -229,6 +262,22 @@ class MemorySnapshotService:
                     entry += f": {detail}"
                 exp_parts.append(entry)
             lines.append("ERFARING:\n" + "\n".join(f"  - {p}" for p in exp_parts))
+
+        if education:
+            edu_parts = []
+            for e in education[:3]:
+                degree = e.get("degree") or ""
+                institution = e.get("institution") or ""
+                start = (e.get("period_start") or "")[:4]
+                end = (e.get("period_end") or "")[:4]
+                period = f"{start}-{end}" if start and end else (start or end or "")
+                entry = f"{degree} - {institution}" if degree and institution else (degree or institution)
+                if period:
+                    entry += f" [{period}]"
+                if entry.strip(" -"):
+                    edu_parts.append(entry)
+            if edu_parts:
+                lines.append("UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in edu_parts))
 
         if skills:
             skill_names = ", ".join(s["name"] for s in skills[:12])

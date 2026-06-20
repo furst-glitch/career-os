@@ -12,6 +12,8 @@ Modes:
                    Input: job_analysis, must_haves, job_title, job_company, language
                    Output: præcise skriveinstruktioner
 """
+import re
+
 from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider
 
@@ -52,6 +54,19 @@ class ReviewBoardAgent(BaseAgent):
                 "- 'drev implementeringen' ≠ 'var IT-ansvarlig' — brug det ringeste niveau\n"
                 "- 'bidragede til X' ≠ 'var ansvarlig for X'\n"
                 "- Opfind ALDRIG eksempler, beløb, datoer eller resultater\n\n"
+                "PROFILSAMMENFATNING:\n"
+                "Profilteksten (## Profil) MÅ IKKE indeholde målvirksomhedens navn. "
+                "Fjern formuleringer som 'hos [VIRKSOMHED]', 'til [VIRKSOMHED]' eller 'ved [VIRKSOMHED]'. "
+                "Profilteksten skal være portabel — virksomhedsnavnet hører til i ansøgningen, ikke i CV'et.\n\n"
+                "FULDSTÆNDIGHEDSREGLER:\n"
+                "- Bevar ALLE stillinger fra udkastet — fjern aldrig en stilling, kun komprimer.\n"
+                "- Ældre stillinger: komprimer til 1-2 bullets men behold dem.\n"
+                "- Uddannelse, certifikater og frivilligt arbejde SKAL bevares hvis de er i udkastet.\n\n"
+                "AKTIVT SPROG:\n"
+                "Styrk formuleringer til aktivt sprog der kan verificeres:\n"
+                "FORKERT: 'understøttede styring af' → RIGTIGT: 'styrede'\n"
+                "FORKERT: 'bidragede til besparelser' → RIGTIGT: 'reducerede omkostninger med [beløb]'\n"
+                "Passiv formulering er aldrig en løsning — brug aktivt verbum eller fjern sætningen.\n\n"
                 "Du modtager et udkast, en prioriteret liste af forbedringer og en template-stilguide. "
                 "Din opgave: omskriv udkastet så det implementerer ALLE forbedringer og følger stilguiden præcist. "
                 "Bevar kandidatens reelle erfaringer og informationer — tilføj eller opfind IKKE facts. "
@@ -79,6 +94,19 @@ class ReviewBoardAgent(BaseAgent):
                 "- 'drove the implementation' ≠ 'was IT responsible' — use the lower claim\n"
                 "- 'contributed to X' ≠ 'was responsible for X'\n"
                 "- NEVER invent examples, amounts, dates or results\n\n"
+                "PROFILE SUMMARY:\n"
+                "The profile text (## Profile) MUST NOT contain the target company's name. "
+                "Remove phrases like 'at [COMPANY]', 'for [COMPANY]' or 'with [COMPANY]'. "
+                "The profile must be portable — the company name belongs in the cover letter, not the CV.\n\n"
+                "COMPLETENESS RULES:\n"
+                "- Preserve ALL roles from the draft — never remove a role, only compress.\n"
+                "- Older roles: compress to 1-2 bullets but keep them.\n"
+                "- Education, certifications and volunteering MUST be preserved if in the draft.\n\n"
+                "ACTIVE LANGUAGE:\n"
+                "Strengthen to active voice that can be verified:\n"
+                "WRONG: 'supported management of' → RIGHT: 'managed'\n"
+                "WRONG: 'contributed to savings' → RIGHT: 'reduced costs by [amount]'\n"
+                "Passive phrasing is never a solution — use an active verb or remove the sentence.\n\n"
                 "You receive a draft, a prioritized list of improvements, and a template style guide. "
                 "Your task: rewrite the draft to implement ALL improvements and follow the style guide precisely. "
                 "Preserve the candidate's real experiences and information — do NOT add or invent facts. "
@@ -112,6 +140,33 @@ class ReviewBoardAgent(BaseAgent):
         )
         return AgentResult(content=content, usage=usage)
 
+    def _validate_and_clean_summary(
+        self,
+        summary: str,
+        target_company: str,
+        current_employer: str = "",
+    ) -> str:
+        """Remove company names from profile summary to keep it portable."""
+        if not summary:
+            return summary
+        result = summary
+        for company in filter(None, [target_company, current_employer]):
+            escaped = re.escape(company)
+            result = re.sub(
+                rf"\b(?:hos|til|ved|i|at|for)\s+{escaped}\b",
+                "",
+                result,
+                flags=re.IGNORECASE,
+            )
+            result = re.sub(
+                rf"\bSøger\b[^.]*\b{escaped}[^.]*\.?",
+                "",
+                result,
+                flags=re.IGNORECASE,
+            )
+            result = re.sub(rf"\b{escaped}\b", "", result, flags=re.IGNORECASE)
+        return re.sub(r" {2,}", " ", result).strip()
+
     async def _run_brief(self, input_data: dict) -> AgentResult:
         job_analysis = input_data.get("job_analysis", "")
         must_haves = input_data.get("must_haves", "")
@@ -127,7 +182,8 @@ class ReviewBoardAgent(BaseAgent):
                 "- Inkludér KUN claims der kan verificeres i kandidatprofilen\n"
                 "- Specificér lederskabstype (formel/faglig/projekt) — aldrig bare 'ledelse'\n"
                 "- Flag gaps ærligt frem for at skjule dem\n"
-                "- Brug 'ca.' eller '+' ved approksimationer\n\n"
+                "- Brug 'ca.' eller '+' ved approksimationer\n"
+                "- Ansøgningens profiltekst MÅ IKKE indeholde målvirksomhedens navn\n\n"
                 "Baseret på jobanalysen og de vigtigste krav: producér en konkret skrivebrief "
                 "som en ansøgningsskriver KAN FØLGE for at skrive den perfekte ansøgning.\n\n"
                 "Ansøgningen skal have 4 afsnit:\n"
@@ -153,7 +209,8 @@ class ReviewBoardAgent(BaseAgent):
                 "- Include ONLY claims verifiable in the candidate profile\n"
                 "- Specify leadership type (formal/functional/project) — never just 'management'\n"
                 "- Address gaps honestly rather than hiding them\n"
-                "- Use 'approx.' or '+' for approximations\n\n"
+                "- Use 'approx.' or '+' for approximations\n"
+                "- The profile text in the application MUST NOT contain the target company's name\n\n"
                 "Based on the job analysis and key requirements: produce a concrete writing brief "
                 "that a letter writer CAN FOLLOW to write the perfect application.\n\n"
                 "The application must have 4 paragraphs:\n"

@@ -174,13 +174,18 @@ class CVAgent(BaseAgent):
                 "2. Er kandidaten systemejer/ansvarlig — eller power user/implementerer?\n"
                 "3. Er alle DKK-beløb, procenter og headcount bekræftet i profilen?\n"
                 "4. Er kandidaten enebidragsyder eller del af et team?\n\n"
-                "NØJAGTIGHEDSREGLER (HÅRD BEGRÆNSNING — aldrig overskrid):\n"
+                "PRÆCISIONSREGLER — TO FEJLTYPER (begge skader kandidaten):\n"
+                "Type A — Overstatement (aldrig tilladt):\n"
                 "- 'drev implementeringen' ≠ 'var IT-ansvarlig'\n"
                 "- 'leverede data til audit' ≠ 'deltog i auditgruppe'\n"
                 "- 'bidragede til X' ≠ 'var ansvarlig for X'\n"
                 "- 'har arbejdet med X' ≠ 'er ekspert i X'\n"
-                "Kan en påstand IKKE verificeres i kandidatprofilen: nedtone sproget eller fjern påstanden.\n"
-                "Opfind ALDRIG eksempler, beløb, datoer eller resultater.\n\n"
+                "- Opfind ALDRIG eksempler, beløb, datoer eller resultater\n"
+                "Type B — Understatement (også en fejl):\n"
+                "- Bekræftede kompetencer SKAL med — at udelade data fra profilen er en fejl\n"
+                "- Erfaringer og uddannelse i profilen SKAL inkluderes\n"
+                "- Brug hæmmet sprog for afledt data ('sandsynligvis', 'formentlig') men inkludér det\n"
+                "Bekræftet data: inkludér altid. Afledt data: hæmmet sprog. Opfundet: aldrig.\n\n"
                 "LEDERSKABSSPROG:\n"
                 "- Formel personaleledelse: skriv 'personaleleder med X direkte rapporteringer'\n"
                 "- Faglig ledelse: skriv 'faglig leder / rådgiver for X'\n"
@@ -192,21 +197,46 @@ class CVAgent(BaseAgent):
                 "Rund ALDRIG op. Opfind ALDRIG metrics.\n\n"
                 "STRUKTUR (brug præcis disse sektionsnavne med ## foran):\n"
                 "## Profil\n"
-                "3-4 linjer der matcher kandidaten præcist til netop dette job.\n\n"
+                "3-4 linjer der matcher kandidaten præcist til netop dette job. "
+                "Inkludér IKKE målvirksomhedens navn — profilteksten skal være portabel.\n\n"
                 "## Erhvervserfaring\n"
-                "Omvendt kronologisk. For HVER stilling:\n"
+                "Omvendt kronologisk. Inkludér ALLE stillinger — afkort aldrig karrierehistorik. "
+                "For HVER stilling:\n"
                 "  [Stillingsbetegnelse] – [Virksomhed] | [ÅÅÅÅ-MM] – [ÅÅÅÅ-MM eller Nu]\n"
-                "  - Bullet med konkret resultat og verificeret tal/procent\n"
-                "  - Bullet med nøgleopgave (maks 6 bullets per stilling)\n\n"
+                "  - Bullet med konkret resultat og verificeret tal/procent (aktiv forumleringn)\n"
+                "  - Bullet med nøgleopgave (maks 6 bullets per stilling; ældre: 1-2 bullets)\n\n"
                 "## Kompetencer\n"
-                "Kun kompetencer der er direkte relevante for dette job.\n\n"
+                "Inkludér kompetencer fra ALLE tilgængelige kilder i kandidatprofilen "
+                "(oplistede kompetencer, erfaringstitler, uddannelse). "
+                "Fremhæv dem der matcher dette job. Fjern IKKE bekræftede kompetencer.\n\n"
                 "## Uddannelse\n"
-                "[Uddannelse] – [Institution] | [ÅÅÅÅ-MM] – [ÅÅÅÅ-MM]\n\n"
+                "[Uddannelse] – [Institution] | [ÅÅÅÅ-MM] – [ÅÅÅÅ-MM]\n"
+                "Denne sektion SKAL ALTID med. Inkludér også: certifikater, kurser, lederudvikling. "
+                "Ingen uddannelse fundet nogen steder i profilen: skriv '[Uddannelse ikke angivet]' "
+                "— udelad aldrig sektionen.\n\n"
+                "## Frivilligt arbejde / Certifikater (inkludér altid hvis oplyst i profilen)\n"
+                "Sportscoaching med licensniveau, frivilligt arbejde med organisation og år, "
+                "priser og anerkendelse.\n\n"
+                "FULDSTÆNDIGHEDSREGLER (obligatoriske — alle syv):\n"
+                "1. FULD KARRIEREHISTORIK: Inkludér ALLE stillinger fra profilen — afkort aldrig.\n"
+                "   Ældre stillinger: 1-2 bullets er nok, men stillingen SKAL med.\n"
+                "2. UDDANNELSE ALTID: Hent fra profil, snapshot og CV-tekst. Skriv aldrig 'ikke angivet'\n"
+                "   hvis uddannelse findes nogen steder i systemet.\n"
+                "3. FRIVILLIGT OG EKSTRA: Inkludér altid sportscoaching, frivilligarbejde, priser.\n"
+                "4. TEKNOLOGIER: Udelad aldrig specifikke systemer — hent fra profil.kompetencer og snapshot.\n"
+                "5. AKTIVT SPROG:\n"
+                "   FORKERT: 'understøttede styring af partnerskaber'\n"
+                "   RIGTIGT:  'styrede strategiske partnerskaber'\n"
+                "   FORKERT: 'bidragede til besparelser'\n"
+                "   RIGTIGT:  'reducerede omkostninger med 5+ mio. kr.'\n"
+                "   Brug altid det stærkeste aktive verbum der kan verificeres.\n"
+                "6. KONTAKT ÉN GANG: Navn og kontaktinfo vises kun i headeren — ingen KONTAKT-sektion i teksten.\n"
+                "7. LINKEDIN-URL: Vis altid renset URL uden https://www. præfiks.\n\n"
                 "REGLER:\n"
                 "- Brug KUN de eksakte datoer fra kandidatprofilen. Opfind ALDRIG datoer.\n"
                 "- Hvis en dato mangler i profilen, skriv [årstal ukendt].\n"
-                "- Maks 500 ord total (tilpasset én A4-side).\n"
-                "- Fremhæv KUN erfaringer og kompetencer der matcher dette specifikke job.\n"
+                "- Tilpas til kandidatens erfaringsbredde — afkort ALDRIG karrierehistorik.\n"
+                "- Fremhæv erfaringer og kompetencer der matcher dette specifikke job.\n"
                 "- ESG: hvis kandidaten har ESG-erfaring, specificér Scope-kategori og præcis rolle.\n"
                 "- Skriv med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å.\n"
                 "- CO2 skrives altid som 'CO2' — aldrig CO₂ eller andet.\n"
@@ -227,13 +257,18 @@ class CVAgent(BaseAgent):
                 "2. Was the candidate system owner/responsible — or power user/implementer?\n"
                 "3. Are all amounts, percentages and headcount confirmed in the profile?\n"
                 "4. Is the candidate a sole contributor or part of a team?\n\n"
-                "ACCURACY RULES (HARD CONSTRAINT — never violate):\n"
+                "PRECISION RULES — TWO ERROR TYPES (both harm the candidate):\n"
+                "Type A — Overstatement (never allowed):\n"
                 "- 'drove the implementation' ≠ 'was IT responsible'\n"
                 "- 'provided data for audits' ≠ 'participated in audit group'\n"
                 "- 'contributed to X' ≠ 'was responsible for X'\n"
                 "- 'has worked with X' ≠ 'is an expert in X'\n"
-                "If a claim CANNOT be verified in the candidate profile: downgrade the language or remove it.\n"
-                "NEVER invent examples, amounts, dates or results.\n\n"
+                "- NEVER invent examples, amounts, dates or results\n"
+                "Type B — Understatement (also an error):\n"
+                "- Confirmed competencies MUST be included — omitting profile data is an error\n"
+                "- Experience and education in the profile MUST be included\n"
+                "- Use hedged language for inferred data ('likely', 'presumably') but include it\n"
+                "Confirmed data: always include. Inferred data: hedge language. Invented: never.\n\n"
                 "LEADERSHIP LANGUAGE:\n"
                 "- Formal people management: write 'people manager with X direct reports'\n"
                 "- Functional leadership: write 'functional lead / advisor for X'\n"
@@ -245,21 +280,46 @@ class CVAgent(BaseAgent):
                 "NEVER round up. NEVER invent metrics.\n\n"
                 "STRUCTURE (use exactly these section names with ## prefix):\n"
                 "## Profile\n"
-                "3-4 lines precisely matching the candidate to this specific job.\n\n"
+                "3-4 lines precisely matching the candidate to this specific job. "
+                "Do NOT include the target company's name — the profile text must be portable.\n\n"
                 "## Work Experience\n"
-                "Reverse chronological. For EACH role:\n"
+                "Reverse chronological. Include ALL roles — never truncate career history. "
+                "For EACH role:\n"
                 "  [Job Title] – [Company] | [YYYY-MM] – [YYYY-MM or Present]\n"
-                "  - Bullet with concrete verified result and number/percentage\n"
-                "  - Bullet with key responsibility (max 6 bullets per role)\n\n"
+                "  - Bullet with concrete verified result and number/percentage (active voice)\n"
+                "  - Bullet with key responsibility (max 6 bullets per role; older roles: 1-2 bullets)\n\n"
                 "## Skills\n"
-                "Only skills directly relevant to this job.\n\n"
+                "Include skills from ALL available sources in the candidate profile "
+                "(listed skills, job titles, education). Highlight those matching this job. "
+                "Do NOT omit confirmed skills.\n\n"
                 "## Education\n"
-                "[Degree] – [Institution] | [YYYY-MM] – [YYYY-MM]\n\n"
+                "[Degree] – [Institution] | [YYYY-MM] – [YYYY-MM]\n"
+                "This section MUST always be included. Also include: certifications, courses, leadership training. "
+                "No education found anywhere in the profile: write '[Education not provided]' "
+                "— never omit this section.\n\n"
+                "## Volunteering / Certifications (include if present in profile)\n"
+                "Sports coaching with licence level, volunteer work with organisation and years, "
+                "awards and recognition.\n\n"
+                "COMPLETENESS RULES (mandatory — all seven):\n"
+                "1. FULL CAREER HISTORY: Include ALL positions from the profile — never truncate.\n"
+                "   Older roles: 1-2 bullets suffice, but the role MUST appear.\n"
+                "2. EDUCATION ALWAYS: Pull from profile, snapshot and CV text. Never write 'not provided'\n"
+                "   if education exists anywhere in the system.\n"
+                "3. VOLUNTEERING & EXTRACURRICULAR: Always include coaching, volunteering, awards.\n"
+                "4. TECHNOLOGIES: Never omit specific systems — pull from profile.skills and snapshot.\n"
+                "5. ACTIVE LANGUAGE:\n"
+                "   WRONG: 'supported management of partnerships'\n"
+                "   RIGHT:  'managed strategic partnerships'\n"
+                "   WRONG: 'contributed to savings'\n"
+                "   RIGHT:  'reduced costs by 5+ million DKK'\n"
+                "   Always use the strongest active verb that can be verified.\n"
+                "6. CONTACT ONCE: Name and contact appear in the header only — no Contact section in body text.\n"
+                "7. LINKEDIN URL: Always display cleaned URL without https://www. prefix.\n\n"
                 "RULES:\n"
                 "- Use ONLY the exact dates from the candidate profile. NEVER invent dates.\n"
                 "- If a date is missing from the profile, write [year unknown].\n"
-                "- Max 500 words total (fits one A4 page).\n"
-                "- Highlight ONLY experience and skills matching this specific job.\n"
+                "- Adapt to the candidate's career breadth — NEVER truncate career history.\n"
+                "- Highlight experience and skills matching this specific job.\n"
                 "- ESG: if candidate has ESG experience, specify Scope category and exact role.\n"
                 "- Do NOT use **, *, or other markdown symbols — only ## for section headers and - for bullets.\n"
                 "- Do NOT write a name/header at the top — it is added automatically from the profile."
@@ -372,3 +432,90 @@ class CVAgent(BaseAgent):
                 except json.JSONDecodeError:
                     pass
         return {}
+
+    async def _build_education_section(self, cv_text: str, snapshot: dict) -> str:
+        """Build education string from snapshot (priority) or cv_text fallback."""
+        edu = snapshot.get("education") or []
+        if edu:
+            parts = []
+            for e in edu:
+                degree = e.get("degree") or ""
+                institution = e.get("institution") or ""
+                start = (e.get("period_start") or "")[:4]
+                end = (e.get("period_end") or "")[:4]
+                period = f"{start}-{end}" if start and end else (start or end or "")
+                entry = f"{degree} - {institution}" if degree and institution else (degree or institution)
+                if period:
+                    entry += f" | {period}"
+                if entry.strip(" -|"):
+                    parts.append(entry)
+            if parts:
+                return "UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in parts)
+
+        edu_match = re.search(
+            r"(?:uddannelse|education|bachelor|master|kandidat|diplom|cand\.|hd |hd\.|mba|ph\.?d)"
+            r"[^\n]*(?:\n[ \t]*[^\n#\-]{10,100}){0,3}",
+            cv_text,
+            re.IGNORECASE,
+        )
+        if edu_match:
+            return f"UDDANNELSE (fra CV-tekst):\n  {edu_match.group(0)[:250].strip()}"
+
+        return "UDDANNELSE: [Ikke oplyst]"
+
+    def _infer_skills_from_experience(self, recent_jobs: list) -> list[str]:
+        """Infer generic skills from job titles and descriptions."""
+        _TITLE_SKILL_MAP: list[tuple[re.Pattern, list[str]]] = [
+            (re.compile(r"project|projekt", re.I), ["Projektledelse", "Planlægning", "Interessenthåndtering"]),
+            (re.compile(r"finance|finans|økonomi|controller|regnskab", re.I), ["Budgettering", "Finansiel analyse", "Excel"]),
+            (re.compile(r"\bhr\b|human resources|personale", re.I), ["Rekruttering", "Arbejdsret", "HR-processer"]),
+            (re.compile(r"marketing|kommunikation|content", re.I), ["Kampagnestyring", "Content marketing", "SEO"]),
+            (re.compile(r"supply chain|indkøb|procurement|logistik", re.I), ["Indkøbsforhandling", "Leverandørstyring", "Logistik"]),
+            (re.compile(r"\bit\b|developer|software|\bdata\b|\btech\b", re.I), ["Analytisk tænkning", "Problemløsning", "Teknisk forståelse"]),
+            (re.compile(r"esg|sustainability|bæredygtighed|klima", re.I), ["ESG-rapportering", "Bæredygtighedsstrategi", "CO2-beregning"]),
+            (re.compile(r"salg|sales|business.dev|bd\b", re.I), ["Salgsforhandling", "CRM", "Kundeudvikling"]),
+            (re.compile(r"leder|manager|direktør|chef|head of", re.I), ["Ledelse", "Strategisk planlægning", "Teamudvikling"]),
+        ]
+        inferred: set[str] = set()
+        for job in recent_jobs:
+            combined = f"{job.get('title', '')} {job.get('description', '')}"
+            for pattern, skills in _TITLE_SKILL_MAP:
+                if pattern.search(combined):
+                    inferred.update(skills)
+        return list(inferred)
+
+    def _rank_skills_by_relevance(self, skills: list[str], job_keywords: list[str]) -> list[str]:
+        """Sort skills by overlap with job description keywords."""
+        if not job_keywords:
+            return skills
+        kw_set = {k.lower() for k in job_keywords}
+
+        def score(skill: str) -> int:
+            return sum(1 for word in skill.lower().split() if word in kw_set)
+
+        return sorted(skills, key=score, reverse=True)
+
+    async def _build_skills_section(self, cv_text: str, snapshot: dict, job: dict) -> str:
+        """Build ranked skills list from snapshot + inferred from experience."""
+        skills: list[str] = [
+            s.get("name", "").strip()
+            for s in (snapshot.get("skills") or [])
+            if s.get("name")
+        ]
+        inferred = self._infer_skills_from_experience(snapshot.get("experience") or [])
+        seen_lower = {s.lower() for s in skills}
+        for s in inferred:
+            if s.lower() not in seen_lower:
+                skills.append(s)
+                seen_lower.add(s.lower())
+
+        job_text = " ".join([
+            job.get("title", ""),
+            job.get("description", ""),
+            " ".join(job.get("requirements", [])),
+        ])
+        job_keywords = re.findall(r"\b\w{4,}\b", job_text.lower())
+        ranked = self._rank_skills_by_relevance(skills, job_keywords)
+        if not ranked:
+            return ""
+        return "KOMPETENCER: " + ", ".join(ranked[:15])
