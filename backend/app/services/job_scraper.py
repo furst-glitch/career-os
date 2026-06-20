@@ -2,15 +2,15 @@
 JobScraper — henter fuld jobtekst fra kildesiderne.
 
 Strategi:
-  - Jobnet: API returnerer allerede fuld beskrivelse — springes over
-  - Jobindex: Hent HTML fra job-URL, ekstraher tekstindhold
-  - Ofir: Hent HTML fra job-URL, ekstraher tekstindhold
-  - Fallback: Generisk ekstraktion fra <main>/<article>
+  - Jobnet: springer over (RSS description bruges direkte)
+  - Jobindex: hent Jobindex-side → extract teaser → find ATS-link i PaidJob-inner
+              → follow ATS-link → hent fuld beskrivelse (typisk 5-8k tegn)
+  - Andre kilder: hent HTML, prøv JSON-LD JobPosting, derefter HTML-ekstraktion
+  - Fallback: generisk ekstraktion fra <main>/<article>
 
-Ekstraktion sker med Pythons built-in HTMLParser.
-Nav, header, footer, script og style springes over.
-Maks 5 samtidige HTTP-requests (Semaphore).
-Maks 8 sekunder pr. request.
+ATS-platforme vi målrettet følger links til:
+  HR Manager / Talentech, Emply, Teamtailor, Greenhouse, Workable,
+  Lever, Recruitee, Personio m.fl.
 """
 from __future__ import annotations
 
@@ -24,22 +24,18 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Maksimal antal tegn at gemme (resten afskæres for at holde DB-størrelse nede)
 _MAX_CHARS = 6_000
 
 _SCRAPE_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "da-DK,da;q=0.9,en;q=0.8",
-    "User-Agent": "Mozilla/5.0 (compatible; CareerOS/1.0; +https://careeros.dk)",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
 }
 
-# Kildespecifikke klasser/tags der typisk indeholder jobbeskrivelse
-# Listet i prioriteret rækkefølge
 _SOURCE_CONTENT_HINTS: dict[str, list[str]] = {
     "jobindex": [
-        # Current (2024+) Jobindex HTML
+        # Jobindex job content is in class="PaidJob-inner" (teaser, ~600 chars)
         "PaidJob-inner", "jobad-body", "jix_jobtext",
-        # Legacy hints
         "PosAdStory", "job-description", "job-text",
     ],
     "ofir": [
@@ -51,6 +47,46 @@ _SOURCE_CONTENT_HINTS: dict[str, list[str]] = {
         "jobtext", "job-body",
     ],
 }
+
+# Substrings that identify known ATS platforms in a URL.
+# Ordered by approximate Danish market share.
+_ATS_URL_MARKERS: tuple[str, ...] = (
+    "hr-manager.net",
+    "applicationinit.aspx",   # HR Manager URL pattern
+    "emply.com",
+    "emply.net",
+    "teamtailor.com",
+    "greenhouse.io",
+    "boards.greenhouse",
+    "workable.com",
+    "lever.co",
+    "recruitee.com",
+    "personio.com",
+    "talentech.com",
+    "hrm.dk",
+    "smartrecruiters.com",
+    "jobvite.com",
+    "icims.com",
+    "successfactors",
+    "breezy.hr",
+    "ashbyhq.com",
+)
+
+# Domains to skip when looking for ATS links (stay on job board itself)
+_SKIP_DOMAINS_ATS: frozenset[str] = frozenset([
+    "jobindex.dk",
+    "jobindexkurser.dk",
+    "ofir.dk",
+    "jobnet.dk",
+    "linkedin.com",
+    "facebook.com",
+    "twitter.com",
+    "instagram.com",
+    "google.com",
+    "youtube.com",
+    "apple.com",
+    "play.google.com",
+])
 
 
 # ── HTMLParser ekstraktor ─────────────────────────────────────────────────────
@@ -68,18 +104,27 @@ class _ContentExtractor(HTMLParser):
         "aside", "noscript", "template", "iframe",
     ])
 
+    # Void elements have no closing tag in HTML5 — never increment depth for them
+    _VOID_ELEMENTS: frozenset[str] = frozenset([
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    ])
+
     def __init__(self, content_hints: list[str]) -> None:
         super().__init__(convert_charrefs=True)
         self._hints = [h.lower() for h in content_hints]
         self._depth = 0
-        self._skip_depth = 0          # ignore subtree when > 0
-        self._target_depth = 0        # capture subtree when > 0
+        self._skip_depth = 0
+        self._target_depth = 0
         self._parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # Void elements have no matching endtag — skip depth tracking to avoid drift
+        if tag in self._VOID_ELEMENTS:
+            return
+
         self._depth += 1
 
-        # Altid springer disse tags over (og deres undertræ)
         if tag in self._ALWAYS_SKIP and self._skip_depth == 0:
             self._skip_depth = self._depth
             return
@@ -87,7 +132,6 @@ class _ContentExtractor(HTMLParser):
         if self._skip_depth > 0:
             return
 
-        # Aktivér hinting-baseret opsamling
         if self._target_depth == 0 and self._hints:
             attr_dict = {k: (v or "").lower() for k, v in attrs}
             cls = attr_dict.get("class", "")
@@ -97,11 +141,12 @@ class _ContentExtractor(HTMLParser):
                 self._target_depth = self._depth
                 return
 
-        # Generiske fallbacks
         if self._target_depth == 0 and tag in ("main", "article"):
             self._target_depth = self._depth
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in self._VOID_ELEMENTS:
+            return
         if self._skip_depth == self._depth:
             self._skip_depth = 0
         if self._target_depth == self._depth:
@@ -111,7 +156,6 @@ class _ContentExtractor(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._skip_depth > 0:
             return
-        # Kun opsaml hvis vi er inde i target-container (eller ingen container fundet)
         if self._target_depth > 0 or not self._hints:
             text = data.strip()
             if len(text) >= 2:
@@ -119,14 +163,13 @@ class _ContentExtractor(HTMLParser):
 
     def get_text(self) -> str:
         raw = "\n".join(self._parts)
-        # Normaliser whitespace: bevar linjeskift, fjern gentagne blanke linjer
         raw = re.sub(r" {2,}", " ", raw)
         raw = re.sub(r"\n{3,}", "\n\n", raw)
         return raw.strip()
 
 
 def _extract_text(html: str, source: str) -> str:
-    """Ekstraher jobtekst fra råt HTML. Returner op til _MAX_CHARS tegn."""
+    """Ekstraher jobtekst fra råt HTML via _ContentExtractor."""
     hints = _SOURCE_CONTENT_HINTS.get(source, [])
     parser = _ContentExtractor(hints)
     try:
@@ -135,7 +178,6 @@ def _extract_text(html: str, source: str) -> str:
         pass
     text = parser.get_text()
 
-    # Fallback: ingen content fundet via hints → kør uden hints
     if len(text) < 150 and hints:
         fallback = _ContentExtractor([])
         try:
@@ -147,25 +189,98 @@ def _extract_text(html: str, source: str) -> str:
     return text[:_MAX_CHARS]
 
 
-def _find_external_job_url(html: str) -> str | None:
+def _extract_jsonld_job(html: str) -> str:
     """
-    Find linket til den egentlige stillingsannonce fra en landing-/listeside.
-    Bruges når teksten er for kort til at bruge direkte (jobindholdet er eksternt).
-    Springer kendte job-board-domæner over for at undgå cirkler.
+    Søg efter JSON-LD <script type="application/ld+json"> med @type JobPosting.
+    Returnerer description-feltet (HTML-strips) eller tom streng.
+    """
+    import json as _json
+
+    blocks = re.findall(
+        r'<script[^>]+application/ld\+json[^>]*>([\s\S]*?)</script>',
+        html,
+        re.IGNORECASE,
+    )
+    best = ""
+    for block in blocks:
+        try:
+            data = _json.loads(block.strip())
+        except Exception:
+            continue
+
+        entries = data if isinstance(data, list) else [data]
+        flat: list[dict] = []
+        for entry in entries:
+            if isinstance(entry, dict) and "@graph" in entry:
+                flat.extend(entry["@graph"])
+            else:
+                flat.append(entry)
+
+        for entry in flat:
+            if not isinstance(entry, dict):
+                continue
+            entry_type = entry.get("@type", "")
+            types = entry_type if isinstance(entry_type, list) else [entry_type]
+            if "JobPosting" not in types:
+                continue
+            raw = entry.get("description", "")
+            if not raw:
+                continue
+            cleaned = re.sub(r"<[^>]+>", " ", raw)
+            cleaned = re.sub(r"&nbsp;", " ", cleaned)
+            cleaned = re.sub(r"&amp;", "&", cleaned)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
+            if len(cleaned) > len(best):
+                best = cleaned
+    return best
+
+
+def _find_ats_link(html: str) -> str | None:
+    """
+    Find link til ATS-platform i en Jobindex PaidJob-inner sektion.
+
+    Jobindex job-sider indlejrer et link til arbejdsgiverens ATS (HR Manager,
+    Emply, Teamtailor, Greenhouse m.fl.) direkte i PaidJob-inner-div'en.
+    Den fulde jobbeskrivelse er på ATS-platformen.
+
+    Søger i PaidJob-inner-sektionen først, derefter hele HTML som fallback.
     """
     from urllib.parse import urlparse
 
-    _SKIP_DOMAINS = frozenset([
-        "jobindex.dk", "ofir.dk", "jobnet.dk", "linkedin.com",
-        "facebook.com", "twitter.com", "instagram.com", "google.com",
-        "youtube.com", "t.co", "bit.ly",
-    ])
+    # Afgræns søgning til PaidJob-inner hvis muligt
+    paidjob_idx = html.lower().find("paidjob-inner")
+    chunk = html[paidjob_idx : paidjob_idx + 5000] if paidjob_idx >= 0 else html
+
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', chunk, re.IGNORECASE)
+    for href in hrefs:
+        href = href.strip()
+        if not href.startswith("http"):
+            continue
+        try:
+            domain = urlparse(href).netloc.lower()
+        except Exception:
+            continue
+        if any(skip in domain for skip in _SKIP_DOMAINS_ATS):
+            continue
+        href_lower = href.lower()
+        if any(marker in href_lower for marker in _ATS_URL_MARKERS):
+            return href
+
+    return None
+
+
+def _find_external_job_url(html: str) -> str | None:
+    """
+    Find link til den egentlige stillingsannonce fra en landing-/listeside.
+    Bruges som fallback når der ikke er et ATS-link og teksten er for kort.
+    """
+    from urllib.parse import urlparse
+
     _APPLY_RE = re.compile(
         r"(s[øo]g\s+stillingen|se\s+stillingsopslaget|se\s+opslaget|ansøg\s+nu|apply\s+now|full\s+job|read\s+more)",
         re.IGNORECASE,
     )
 
-    # Find alle <a href="...">tekst</a>
     anchors = re.findall(
         r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
         html,
@@ -183,7 +298,7 @@ def _find_external_job_url(html: str) -> str | None:
             domain = urlparse(href).netloc.lower().lstrip("www.")
         except Exception:
             continue
-        if any(skip in domain for skip in _SKIP_DOMAINS):
+        if any(skip in domain for skip in _SKIP_DOMAINS_ATS):
             continue
         clean_text = re.sub(r"<[^>]+>", "", raw_text).strip()
         if _APPLY_RE.search(clean_text):
@@ -203,14 +318,22 @@ async def _scrape_one(
 ) -> None:
     """
     Henter fuld jobtekst for ét job in-place.
-    Springer Jobnet over (har allerede API-data).
-    Hvis landing-siden giver for lidt tekst, følges eksternt link til den egentlige annonce.
+
+    For Jobindex:
+      1. Hent Jobindex job-side → extract PaidJob-inner teaser
+      2. Find ATS-link i PaidJob-inner (HR Manager, Emply, Teamtailor, ...)
+      3. Følg ATS-link → hent fuld jobbeskrivelse (typisk 5-8k tegn)
+
+    For andre kilder:
+      1. Hent HTML
+      2. Prøv JSON-LD JobPosting
+      3. HTML-ekstraktion (hints → fallback til <main>/<article>)
+      4. Hvis < 400 tegn: følg eventuelt eksternt link
     """
     source = job.get("source", "")
     url = job.get("url")
 
     if source == "jobnet":
-        # Jobnet API returnerer JobPostingDescription — allerede i description
         return
     if not url:
         return
@@ -227,9 +350,42 @@ async def _scrape_one(
             logger.debug("Scrape fejlede for %s: %s", url, exc)
             return
 
+    # Ekstraher teaser fra kildesiden
     text = _extract_text(html, source)
 
-    # Hvis landing-siden kun har en teaser (<400 tegn), kig efter eksternt link
+    # JSON-LD JobPosting på kildesiden (sjælden for Jobindex, hyppig for andre)
+    jsonld_text = _extract_jsonld_job(html)
+    if len(jsonld_text) > len(text):
+        text = jsonld_text
+        logger.debug("JSON-LD JobPosting: %d tegn fra %s", len(text), url[:80])
+
+    # ── Jobindex: følg ATS-link til fuld jobbeskrivelse ──────────────────────
+    if source == "jobindex" and html:
+        ats_url = _find_ats_link(html)
+        if ats_url:
+            ats_html: str | None = None
+            async with sem:
+                try:
+                    resp_ats = await client.get(ats_url, headers=_SCRAPE_HEADERS)
+                    if resp_ats.status_code == 200:
+                        ats_html = resp_ats.text
+                        logger.debug("ATS URL: %s → %d chars", ats_url[:60], len(ats_html))
+                except Exception as exc:
+                    logger.debug("ATS-scrape fejlede for %s: %s", ats_url, exc)
+
+            if ats_html:
+                # JSON-LD på ATS-siden foretrækkes
+                ats_text = _extract_jsonld_job(ats_html)
+                if len(ats_text) < 300:
+                    # Generisk HTML-ekstraktion (ingen hints — brug <main>/<article>)
+                    ats_text = _extract_text(ats_html, "")
+                if len(ats_text) > len(text):
+                    text = ats_text
+                    logger.debug(
+                        "ATS-scrape: %d tegn fra %s", len(text), ats_url[:80]
+                    )
+
+    # ── Generisk fallback: følg eksternt link hvis stadig for kort ───────────
     if len(text) < 400 and html:
         followup_url = _find_external_job_url(html)
         if followup_url:
@@ -242,7 +398,9 @@ async def _scrape_one(
                 except Exception as exc:
                     logger.debug("Followup-scrape fejlede for %s: %s", followup_url, exc)
             if followup_html:
-                text2 = _extract_text(followup_html, "")
+                text2 = _extract_jsonld_job(followup_html)
+                if not text2 or len(text2) < 200:
+                    text2 = _extract_text(followup_html, "")
                 if len(text2) > len(text):
                     text = text2
                     logger.debug(
@@ -253,10 +411,7 @@ async def _scrape_one(
     if len(text) >= 100:
         job["full_description"] = text
         job["scraped_at"] = datetime.now(UTC).isoformat()
-        logger.debug(
-            "Scraped %d tegn fra %s (%s)",
-            len(text), source, url[:80],
-        )
+        logger.debug("Scraped %d tegn fra %s (%s)", len(text), source, url[:80])
 
 
 # ── Batch scraping ────────────────────────────────────────────────────────────
@@ -264,23 +419,20 @@ async def _scrape_one(
 async def scrape_jobs_batch(
     jobs: list[dict],
     max_concurrent: int = 5,
-    timeout_per_request: float = 8.0,
-    total_timeout: float = 15.0,
+    timeout_per_request: float = 10.0,
+    total_timeout: float = 25.0,
 ) -> None:
     """
     Scraper fuld jobtekst for alle jobs in-place.
 
-    Args:
-        jobs:               Liste af job-dicts (muteres in-place med full_description)
-        max_concurrent:     Maks antal samtidige HTTP-requests
-        timeout_per_request: Timeout per request (sekunder)
-        total_timeout:      Total timeout for hele batchen (sekunder)
+    Timeout er sat op ift. at Jobindex-jobs nu kan kræve 2 requests
+    (Jobindex-side + ATS-side).
     """
     sem = asyncio.Semaphore(max_concurrent)
     async with httpx.AsyncClient(
         timeout=timeout_per_request,
         follow_redirects=True,
-        max_redirects=3,
+        max_redirects=5,
     ) as client:
         tasks = [_scrape_one(client, sem, job) for job in jobs]
         try:
