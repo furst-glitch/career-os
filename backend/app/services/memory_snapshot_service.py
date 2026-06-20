@@ -156,7 +156,6 @@ class MemorySnapshotService:
             .select("title, company, period_start, period_end, is_current, description, achievements, technologies")
             .eq("master_cv_id", mcv_id)
             .order("period_start", desc=True)
-            .limit(5)
             .execute()
             .data
         )
@@ -250,16 +249,18 @@ class MemorySnapshotService:
 
         if experience:
             exp_parts = []
-            for e in experience[:5]:
+            for i, e in enumerate(experience):
                 start = (e.get("period_start") or "")[:7]
                 end = "nu" if e.get("is_current") else (e.get("period_end") or "")[:7]
                 period = f"{start}–{end}" if start else ("nu" if e.get("is_current") else "")
-                desc = e.get("description") or ""
-                achiev = "; ".join((e.get("achievements") or [])[:2])
-                detail = (achiev or desc)[:120]
                 entry = f"{e['title']} @ {e['company']} [{period}]"
-                if detail:
-                    entry += f": {detail}"
+                if i < 5:
+                    # Recent positions: include description/achievements
+                    desc = e.get("description") or ""
+                    achiev = "; ".join((e.get("achievements") or [])[:2])
+                    detail = (achiev or desc)[:120]
+                    if detail:
+                        entry += f": {detail}"
                 exp_parts.append(entry)
             lines.append("ERFARING:\n" + "\n".join(f"  - {p}" for p in exp_parts))
 
