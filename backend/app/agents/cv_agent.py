@@ -390,7 +390,7 @@ class CVAgent(BaseAgent):
 
         messages = [
             {"role": "system", "content": PARSE_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Analyser dette CV:\n\n{raw_text[:12000]}"},
+            {"role": "user", "content": f"Analyser dette CV:\n\n{raw_text[:30000]}"},
         ]
 
         llm = LiteLLMProvider(self.user_id)
