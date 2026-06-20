@@ -144,14 +144,13 @@ function fmtDate(iso: string) {
 
 // ── Notification Bell ─────────────────────────────────────────────────────────
 
-function NotificationBell() {
+export function NotificationBell({ dropUp = false }: { dropUp?: boolean }) {
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Poll unread count every 60s
   useEffect(() => {
     function fetchCount() {
       apiGet<{ count: number }>("/notifications/count")
@@ -163,7 +162,6 @@ function NotificationBell() {
     return () => clearInterval(t);
   }, []);
 
-  // Load notifications when opened
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -173,7 +171,6 @@ function NotificationBell() {
       .finally(() => setLoading(false));
   }, [open]);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -215,7 +212,10 @@ function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute bottom-10 left-0 z-50 w-80 rounded-xl border border-slate-700 bg-slate-800 shadow-xl">
+        <div className={cn(
+          "absolute z-50 w-80 rounded-xl border border-slate-700 bg-slate-800 shadow-xl",
+          dropUp ? "bottom-10 left-0" : "top-10 right-0"
+        )}>
           <div className="flex items-center justify-between border-b border-slate-700 px-4 py-2.5">
             <span className="text-sm font-semibold text-white">Notifikationer</span>
             {count > 0 && (
@@ -272,7 +272,12 @@ function NotificationBell() {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -291,15 +296,36 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-64 flex-col bg-slate-900 text-white">
+    <aside
+      className={cn(
+        // Mobile: fixed drawer that slides in/out
+        "fixed inset-y-0 left-0 z-50 flex h-full w-72 flex-col bg-slate-900 text-white",
+        "transition-transform duration-300 ease-in-out",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+        // Desktop: static sidebar, always visible
+        "lg:relative lg:w-64 lg:translate-x-0 lg:z-auto lg:shrink-0"
+      )}
+    >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 border-b border-slate-800 px-5 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+      <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <span className="font-bold text-white">CareerOS</span>
         </div>
-        <span className="font-bold text-white">CareerOS</span>
+        {/* Close button — only shown on mobile */}
+        <button
+          onClick={onClose}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors lg:hidden"
+          aria-label="Luk menu"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
       </div>
 
       {/* Navigation */}
@@ -312,8 +338,9 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-blue-600 text-white"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white"
@@ -338,7 +365,7 @@ export function Sidebar() {
             <p className="truncate text-xs text-slate-400">{userEmail ?? "..."}</p>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <NotificationBell />
+            <NotificationBell dropUp />
             <button
               onClick={handleLogout}
               className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-slate-800 hover:text-slate-300"

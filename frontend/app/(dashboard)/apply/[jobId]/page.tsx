@@ -325,14 +325,14 @@ export default function ApplyWorkspacePage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
             <Link href="/jobs" className="hover:text-blue-600">Jobs</Link>
             <span>/</span>
             <span>Auto Apply</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">{job.title}</h1>
+          <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{job.title}</h1>
           <p className="text-slate-500">{job.company}{job.location ? ` · ${job.location}` : ""}</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
@@ -396,7 +396,7 @@ export default function ApplyWorkspacePage() {
           {/* Options */}
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-xs font-medium text-slate-500 mb-3 uppercase tracking-wide">Indstillinger</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Sprog</label>
                 <select

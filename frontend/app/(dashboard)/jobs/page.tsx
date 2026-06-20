@@ -164,7 +164,7 @@ function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: bo
 
         {!content && (
           <div className="border-b border-slate-100 px-6 py-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Dokumenttype</label>
                 <select
@@ -363,7 +363,7 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <F label="Jobtitel *">
           <input className={I} value={form.title} onChange={e => upd("title", e.target.value)} placeholder="Senior Developer" required />
         </F>
@@ -371,7 +371,7 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
           <input className={I} value={form.company} onChange={e => upd("company", e.target.value)} placeholder="Acme ApS" required />
         </F>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <F label="Lokation">
           <input className={I} value={form.location} onChange={e => upd("location", e.target.value)} placeholder="København" />
         </F>
@@ -379,7 +379,7 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
           <input className={I} type="url" value={form.url} onChange={e => upd("url", e.target.value)} placeholder="https://..." />
         </F>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <F label="Ansættelsestype">
           <select className={I} value={form.job_type} onChange={e => upd("job_type", e.target.value)}>
             {Object.entries(JOB_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
