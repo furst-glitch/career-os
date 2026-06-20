@@ -142,7 +142,7 @@ async def export_document_pdf(
     title = d.get("title") or "Dokument"
     content = d.get("content") or ""
     doc_type = d.get("document_type") or ""
-    is_cv = doc_type == "cv" or title.startswith("CV")
+    is_cv = doc_type in ("cv", "cv_version") or title.startswith("CV")
 
     if is_cv:
         pdf_bytes = export_generated_cv_as_pdf(title, content, profile)
@@ -181,7 +181,7 @@ async def export_document_docx(
     title = d.get("title") or "Dokument"
     content = d.get("content") or ""
     doc_type = d.get("document_type") or ""
-    is_cv = doc_type == "cv" or title.startswith("CV")
+    is_cv = doc_type in ("cv", "cv_version") or title.startswith("CV")
 
     if is_cv:
         docx_bytes = export_generated_cv_as_docx(title, content, profile)

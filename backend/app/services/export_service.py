@@ -404,12 +404,16 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(*DARK)
             pdf.multi_cell(0, 5.5, _s(line[2:-2]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        elif "|" in line and not line.startswith(("-", "*", "#")):
+            # Job/uddannelses-header: "Stilling – Virksomhed | YYYY-MM – YYYY-MM"
+            pdf.set_font("Helvetica", "B", 9.5)
+            pdf.set_text_color(*DARK)
+            pdf.multi_cell(0, 5.5, _s(line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line.startswith("- ") or line.startswith("* "):
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*DARK)
-            for wl in textwrap.wrap(line[2:], width=100) or [""]:
-                pdf.cell(5, 5, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
-                pdf.multi_cell(0, 5, _s(f"- {wl}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.cell(5, 5, "", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            pdf.multi_cell(0, 5, _s(line[2:]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         elif line in ("---", "***"):
             pdf.ln(1)
             pdf.set_draw_color(*LGT)
@@ -421,8 +425,7 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
         else:
             pdf.set_font("Helvetica", "", 9.5)
             pdf.set_text_color(*DARK)
-            for wl in textwrap.wrap(line, width=105) or [""]:
-                pdf.multi_cell(0, 5, _s(wl), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _s(line), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     pdf.set_auto_page_break(auto=False)
     pdf.set_y(-13)
@@ -483,6 +486,12 @@ def export_generated_cv_as_docx(title: str, content: str, profile: dict) -> byte
         elif line.startswith("**") and line.endswith("**"):
             p = doc.add_paragraph()
             run = p.add_run(line[2:-2])
+            run.bold = True
+            run.font.size = Pt(10)
+        elif "|" in line and not line.startswith(("-", "*", "#")):
+            # Job/uddannelses-header: "Stilling – Virksomhed | YYYY-MM – YYYY-MM"
+            p = doc.add_paragraph()
+            run = p.add_run(line)
             run.bold = True
             run.font.size = Pt(10)
         elif line.startswith("- ") or line.startswith("* "):
