@@ -309,10 +309,9 @@ class NordicExecutiveTemplate:
                     break
                 pdf.set_font("Helvetica", "", self.FS_BODY_L)
                 pdf.set_text_color(*self.C_LEFT_TXT)
-                # Calculate expected height before rendering
                 txt = "\xb7  " + _s(b["text"])
                 pdf.set_xy(x + 2, y)
-                pdf.multi_cell(w - 2, self.LH_L, txt)
+                pdf.multi_cell(w - 2, self.LH_L, txt, align="L")
                 y = min(pdf.get_y() + 1, end_y)
 
             elif bt == "BODY_TEXT":
@@ -321,7 +320,7 @@ class NordicExecutiveTemplate:
                 pdf.set_font("Helvetica", "", self.FS_BODY_L)
                 pdf.set_text_color(*self.C_LEFT_TXT)
                 pdf.set_xy(x, y)
-                pdf.multi_cell(w, self.LH_L, _s(b["text"]))
+                pdf.multi_cell(w, self.LH_L, _s(b["text"]), align="L")
                 y = min(pdf.get_y() + 1.5, end_y)
 
             elif bt == "JOB_HEADER":
@@ -330,12 +329,12 @@ class NordicExecutiveTemplate:
                 pdf.set_font("Helvetica", "B", self.FS_BODY_L)
                 pdf.set_text_color(*self.C_LEFT_BOLD)
                 pdf.set_xy(x, y)
-                pdf.multi_cell(w, self.LH_L, _s(b["title"]))
+                pdf.multi_cell(w, self.LH_L, _s(b["title"]), align="L")
                 y = pdf.get_y()
                 pdf.set_font("Helvetica", "", self.FS_BODY_L - 0.5)
                 pdf.set_text_color(*self.C_LEFT_SUB)
                 pdf.set_xy(x, y)
-                pdf.multi_cell(w, self.LH_L, _s(b["date"]))
+                pdf.multi_cell(w, self.LH_L, _s(b["date"]), align="L")
                 y = min(pdf.get_y() + 1, end_y)
 
     def _render_right(self, pdf, blocks: list[dict]) -> None:

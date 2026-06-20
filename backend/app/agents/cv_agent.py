@@ -200,11 +200,28 @@ class CVAgent(BaseAgent):
                 "3-4 linjer der matcher kandidaten præcist til netop dette job. "
                 "Inkludér IKKE målvirksomhedens navn — profilteksten skal være portabel.\n\n"
                 "## Erhvervserfaring\n"
-                "Omvendt kronologisk. Inkludér ALLE stillinger — afkort aldrig karrierehistorik. "
-                "For HVER stilling:\n"
-                "  [Stillingsbetegnelse] – [Virksomhed] | [ÅÅÅÅ-MM] – [ÅÅÅÅ-MM eller Nu]\n"
-                "  - Bullet med konkret resultat og verificeret tal/procent (aktiv forumleringn)\n"
-                "  - Bullet med nøgleopgave (maks 6 bullets per stilling; ældre: 1-2 bullets)\n\n"
+                "Omvendt kronologisk. Inkludér ALLE stillinger — afkort aldrig karrierehistorik.\n"
+                "For HVER stilling SKAL alle tre elementer være til stede i denne rækkefølge:\n\n"
+                "ELEMENT 1 — OVERSKRIFT (altid):\n"
+                "  [Stillingsbetegnelse] – [Virksomhed] | [Startår] – [Slutår eller nu]\n"
+                "  Eksempel: 'Business Partner – SWECO Danmark | 2018 – nu'\n\n"
+                "ELEMENT 2 — KONTEKSTLINJE (altid, 1-2 sætninger — IKKE et bullet):\n"
+                "  Hvad rollen indebar på et overordnet niveau, INDEN bullets læses.\n"
+                "  Inkludér scope-indikatorer hvis kendte: antal lokationer, medarbejdere, budget, teamstørrelse.\n"
+                "  Nutid for nuværende stilling, datid for tidligere.\n"
+                "  Gode eksempler:\n"
+                "  'Central FM-ressource på tværs af 20+ lokationer og ~2.000 medarbejdere med driftsbudgetter på 120+ mio. kr.'\n"
+                "  'Faglig leder med ansvar for driftsøkonomien i lovreguleret forsyningsmiljø under fusion af to organisationer.'\n"
+                "  'Administrativt og kundevendt arbejde i kommunal forsyningsvirksomhed.'\n"
+                "  Dårlige eksempler (for vage):\n"
+                "  'Arbejdede med procurement og FM.' / 'Varetog administrative opgaver.'\n"
+                "  Spring ALDRIG Element 2 over — skriv minimum én sætning baseret på tilgængelige data.\n\n"
+                "ELEMENT 3 — BULLETS (altid: 3-6 per nuværende stilling, 1-3 per ældre stilling):\n"
+                "  Konkrete resultater, ansvar og bidrag. Minimum én hel sætning per bullet.\n"
+                "  Mix af: hvad du gjorde + hvad det resulterede i.\n"
+                "  Aktivt sprog: 'styrede', 'opbyggede', 'drev', 'designede'\n"
+                "  IKKE passivt: 'understøttede', 'bidragede til at understøtte'\n\n"
+                "Skriv ALDRIG bullets uden en kontekstlinje over dem.\n\n"
                 "## Kompetencer\n"
                 "Inkludér kompetencer fra ALLE tilgængelige kilder i kandidatprofilen "
                 "(oplistede kompetencer, erfaringstitler, uddannelse). "
@@ -283,11 +300,28 @@ class CVAgent(BaseAgent):
                 "3-4 lines precisely matching the candidate to this specific job. "
                 "Do NOT include the target company's name — the profile text must be portable.\n\n"
                 "## Work Experience\n"
-                "Reverse chronological. Include ALL roles — never truncate career history. "
-                "For EACH role:\n"
-                "  [Job Title] – [Company] | [YYYY-MM] – [YYYY-MM or Present]\n"
-                "  - Bullet with concrete verified result and number/percentage (active voice)\n"
-                "  - Bullet with key responsibility (max 6 bullets per role; older roles: 1-2 bullets)\n\n"
+                "Reverse chronological. Include ALL roles — never truncate career history.\n"
+                "For EACH role ALL THREE elements MUST be present in this order:\n\n"
+                "ELEMENT 1 — JOB HEADER (always):\n"
+                "  [Job Title] – [Company] | [Start year] – [End year or Present]\n"
+                "  Example: 'Business Partner – SWECO Denmark | 2018 – Present'\n\n"
+                "ELEMENT 2 — CONTEXT LINE (always, 1-2 sentences — NOT a bullet):\n"
+                "  What the role involved at a high level, BEFORE the reader sees the bullets.\n"
+                "  Include scope indicators where known: locations, headcount, budget, team size.\n"
+                "  Present tense for current role, past tense for previous.\n"
+                "  Good examples:\n"
+                "  'Central FM resource across 20+ locations and ~2,000 employees with operating budgets of 120+ million DKK.'\n"
+                "  'Functional lead responsible for operational economics in a regulated utility environment during merger.'\n"
+                "  'Administrative and customer-facing work in a municipal utility company.'\n"
+                "  Bad examples (too vague):\n"
+                "  'Worked with procurement and FM.' / 'Handled administrative tasks.'\n"
+                "  NEVER skip Element 2 — always write at least one sentence based on available data.\n\n"
+                "ELEMENT 3 — BULLETS (always: 3-6 per current role, 1-3 per older role):\n"
+                "  Specific achievements, responsibilities and contributions. One complete sentence each.\n"
+                "  Mix of: what you did + what it resulted in.\n"
+                "  Active language: 'managed', 'built', 'drove', 'designed'\n"
+                "  NOT passive: 'supported', 'contributed to supporting'\n\n"
+                "NEVER output bullets without a context line above them.\n\n"
                 "## Skills\n"
                 "Include skills from ALL available sources in the candidate profile "
                 "(listed skills, job titles, education). Highlight those matching this job. "
@@ -432,6 +466,72 @@ class CVAgent(BaseAgent):
                 except json.JSONDecodeError:
                     pass
         return {}
+
+    def _generic_context_from_title(self, title: str, company: str) -> str:
+        """Generic context sentence based on job title keywords."""
+        _CONTEXTS: list[tuple[str, str]] = [
+            ("facility",        f"Central FM-ressource med ansvar for drift og leverandørstyring hos {company}."),
+            ("procurement",     f"Indkøbs- og kontraktstyring på tværs af leverandørrelationer hos {company}."),
+            ("controller",      f"Controlling, rapportering og økonomianalyse hos {company}."),
+            ("business partner",f"Faglig sparringspartner for ledelsen på tværs af funktioner hos {company}."),
+            ("esg",             f"ESG-rapportering og bæredygtighedsdata hos {company}."),
+            ("leder",           f"Faglig ledelse og koordinering af processer hos {company}."),
+            ("koordinator",     f"Koordinering og procesudvikling på tværs af organisationen hos {company}."),
+            ("assistent",       f"Administrative og driftsrelaterede opgaver hos {company}."),
+            ("elev",            f"Elevuddannelse med rotation på tværs af afdelinger hos {company}."),
+            ("portier",         f"Selvstændigt ansvar for fuld driftsstyring i nattimerne hos {company}."),
+            ("tjener",          f"Service og gæstehåndtering hos {company}."),
+        ]
+        title_l = (title or "").lower()
+        for keyword, context in _CONTEXTS:
+            if keyword in title_l:
+                return context
+        return f"Bred rolle med ansvar for kerneopgaver inden for området hos {company}."
+
+    def _build_context_line(self, job: dict, snapshot: dict) -> str:
+        """Build 1-2 sentence context description for a position. Never returns empty string."""
+        desc = (job.get("description") or "").strip()
+        if len(desc) > 30:
+            # Truncate to roughly 2 sentences
+            sentences = re.split(r"(?<=[.!?])\s+", desc)
+            return " ".join(sentences[:2])[:220]
+
+        parts: list[str] = []
+        if job.get("team_size"):
+            parts.append(f"{job['team_size']} medarbejdere")
+        if job.get("budget"):
+            parts.append(f"budget på {job['budget']}")
+        if job.get("locations"):
+            parts.append(f"{job['locations']} lokationer")
+        if parts:
+            return f"Rollen omfattede ansvar for {', '.join(parts)}."
+
+        return self._generic_context_from_title(
+            job.get("title") or "", job.get("company") or ""
+        )
+
+    async def _build_experience_section(self, snapshot: dict, job_posting: dict) -> list[dict]:
+        """
+        Build structured experience entries with header, context line, and bullets.
+        Returns list of position dicts for pipeline use when constructing candidate_summary.
+        """
+        positions = snapshot.get("experience") or []
+        result: list[dict] = []
+        for job in positions:
+            start = (job.get("period_start") or "")[:4]
+            end = "nu" if job.get("is_current") else (job.get("period_end") or "")[:4]
+            header = f"{job.get('title', '')} – {job.get('company', '')} | {start} – {end}".strip(" –")
+            context = self._build_context_line(job, snapshot)
+            bullets = [a for a in (job.get("achievements") or []) if a]
+            if not bullets and job.get("description") and len(job["description"]) > 20:
+                bullets = [job["description"][:150]]
+            result.append({
+                "type": "position",
+                "header": header,
+                "context": context,
+                "bullets": bullets,
+            })
+        return result
 
     async def _build_education_section(self, cv_text: str, snapshot: dict) -> str:
         """Build education string from snapshot (priority) or cv_text fallback."""
