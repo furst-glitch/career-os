@@ -78,6 +78,7 @@ const STATUS_COLORS: Record<string, string> = {
 const API_BASE_JOBS = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
 
 function QuickGenModal({ job, initialDocType = "cover_letter", onClose }: { job: Job; initialDocType?: "cover_letter" | "cv"; onClose: (refreshNeeded: boolean) => void }) {
+  const router = useRouter();
   const [docType, setDocType] = useState<"cover_letter" | "cv">(initialDocType);
   const [lang, setLang] = useState<"da" | "en">("da");
   const [style, setStyle] = useState("professional");
@@ -155,7 +156,17 @@ function QuickGenModal({ job, initialDocType = "cover_letter", onClose }: { job:
             </h2>
             <p className="text-sm text-slate-500">{job.title} hos {job.company}</p>
           </div>
-          <button onClick={() => onClose(!!docId)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+          <button
+            onClick={() => {
+              if (docId) {
+                onClose(true);
+                router.push(`/apply/${job.id}`);
+              } else {
+                onClose(false);
+              }
+            }}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6 6 18M6 6l12 12"/>
             </svg>
@@ -250,6 +261,12 @@ function QuickGenModal({ job, initialDocType = "cover_letter", onClose }: { job:
               <>
                 <button onClick={() => download("pdf")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">PDF</button>
                 <button onClick={() => download("docx")} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">DOCX</button>
+                <button
+                  onClick={() => { onClose(true); router.push(`/apply/${job.id}`); }}
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  Åbn i workspace
+                </button>
               </>
             )}
           </div>
@@ -483,13 +500,13 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMa
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 italic">{job.notes}</p>
       )}
 
-      {/* Quick-gen og Auto Apply */}
+      {/* Quick-gen og Oversigt */}
       <div className="mt-3 flex gap-2">
         <Link
           href={`/apply/${job.id}`}
           className="flex-1 rounded-lg border border-emerald-200 bg-emerald-50 py-1.5 text-center text-xs font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
         >
-          Auto Apply ✦
+          Oversigt ✦
         </Link>
         <button
           onClick={() => onQuickGen(job, "cv")}

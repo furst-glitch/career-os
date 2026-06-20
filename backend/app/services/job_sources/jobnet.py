@@ -44,10 +44,16 @@ def _map_employment(emp: str) -> str:
     return "full_time"
 
 
+_JOBNET_RSS = "https://job.jobnet.dk/CV/FindWork/rss"
+
+
 class JobnetSource(BaseJobSource):
     name = "jobnet"
     display_name = "Jobnet"
     requires_api_key = False
+
+    def is_available(self) -> bool:
+        return True
 
     async def search(
         self,
@@ -55,64 +61,72 @@ class JobnetSource(BaseJobSource):
         location: str | None = None,
         limit: int = 20,
     ) -> list[JobResult]:
-        params: dict = {
-            "SearchString": query,
-            "Offset": 0,
-            "SortBy": "BestMatch",
-            "WorkPlaceNotStuffed": "false",
-        }
+        """
+        Jobnet.dk via RSS feed (public, no auth required).
+        Falls back to empty list on any error.
+        """
+        import xml.etree.ElementTree as ET
+
+        params: dict = {"SearchString": query, "Offset": 0}
         if location:
-            params["PostalCode"] = location
+            params["Area"] = location
+
+        rss_headers = {
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            "Accept-Language": "da-DK,da;q=0.9",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    f"{_BASE}/Results",
-                    params=params,
-                    headers=_HEADERS,
-                )
-                if resp.status_code != 200:
-                    logger.warning("Jobnet returned HTTP %s", resp.status_code)
+            async with httpx.AsyncClient(timeout=12.0, follow_redirects=False) as client:
+                resp = await client.get(_JOBNET_RSS, params=params, headers=rss_headers)
+                # Jobnet now requires auth for /CV/ prefix — try public RSS
+                if resp.status_code in (301, 302, 307, 308):
+                    # Redirect to auth page — API unavailable without login
+                    logger.info("Jobnet RSS requires auth (redirect %s) — skipping", resp.status_code)
                     return []
-                data = resp.json()
+                if resp.status_code != 200:
+                    logger.warning("Jobnet RSS returned HTTP %s", resp.status_code)
+                    return []
+                xml_text = resp.text
         except Exception as exc:
             logger.warning("Jobnet search failed: %s", exc)
             return []
 
-        postings = data.get("JobPositionPostings") or []
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError as exc:
+            logger.warning("Jobnet RSS parse error: %s", exc)
+            return []
+
+        items = root.findall(".//item")
         results: list[JobResult] = []
 
-        for p in postings[:limit]:
-            title = p.get("Heading") or p.get("Title") or ""
-            company = p.get("HiringOrgName") or p.get("WorkPlaceName") or "Ukendt"
-            job_id = p.get("JobPositionPostingID") or ""
-            url = f"https://job.jobnet.dk/CV/FindWork/Detail/{job_id}" if job_id else p.get("Url")
+        for item in items[:limit]:
+            def _t(tag: str) -> str:
+                el = item.find(tag)
+                return (el.text or "").strip() if el is not None else ""
 
-            loc_obj = p.get("Location") or p.get("WorkAddress") or {}
-            city = (
-                loc_obj.get("CityName")
-                or loc_obj.get("PostalDistrict")
-                or loc_obj.get("Municipality")
-                or ""
+            title = _t("title")
+            link = _t("link")
+            desc = _strip_html(_t("description"))
+
+            # Try dc:publisher for company name
+            company = (
+                _t("{http://purl.org/dc/elements/1.1/}publisher")
+                or _t("author")
+                or "Ukendt"
             )
-            postal = loc_obj.get("PostalCode") or ""
-            location_str = ", ".join(filter(None, [city, postal])) or None
-
-            description = _strip_html(p.get("JobPostingDescription") or "") or None
-            employment = p.get("Employment") or ""
-            deadline = (p.get("LastDateApplication") or "")[:10] or None
+            location_str = _t("{http://purl.org/dc/elements/1.1/}coverage") or None
 
             results.append(JobResult(
                 title=title,
                 company=company,
                 location=location_str,
-                url=url,
-                description=description,
-                job_type=_map_employment(employment),
-                remote_type="hybrid",
+                url=link or None,
+                description=desc or None,
                 source="jobnet",
-                external_id=job_id,
-                deadline=deadline,
             ))
 
+        logger.info("Jobnet RSS: %d results for '%s'", len(results), query)
         return results

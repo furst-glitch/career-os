@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CompletenessScore } from "@/components/CompletenessScore";
-import { CvTemplateSelector, type CvTemplate } from "@/components/TemplateSelector";
+import { StructuredCvTemplateSelector, type StructuredCvTemplate } from "@/components/TemplateSelector";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ export default function MasterCVPage() {
   const [copied, setCopied]         = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
-  const [cvTemplate, setCvTemplate]   = useState<CvTemplate>("ats_professional");
+  const [cvTemplate, setCvTemplate]   = useState<StructuredCvTemplate>("ats_professional");
   const [showTempl, setShowTempl]     = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -63,7 +63,12 @@ export default function MasterCVPage() {
     loadAll();
     // Load saved template preference
     apiGet<{ default_cv_template: string }>("/export/preferences")
-      .then(p => { if (p.default_cv_template) setCvTemplate(p.default_cv_template as CvTemplate); })
+      .then(p => {
+        const STRUCTURED = ["ats_professional","modern_professional","executive","minimal_nordic","creative_professional"];
+        if (p.default_cv_template && STRUCTURED.includes(p.default_cv_template)) {
+          setCvTemplate(p.default_cv_template as StructuredCvTemplate);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -409,7 +414,7 @@ export default function MasterCVPage() {
             </p>
             {showTempl && (
               <div className="mt-3">
-                <CvTemplateSelector
+                <StructuredCvTemplateSelector
                   selected={cvTemplate}
                   onSelect={t => { setCvTemplate(t); }}
                   columns={3}

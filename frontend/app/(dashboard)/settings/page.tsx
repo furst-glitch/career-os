@@ -326,7 +326,7 @@ function ApiKeysTab() {
 // ── Layout Tab ────────────────────────────────────────────────────────────────
 
 function DokumenterTab() {
-  const [cvTpl, setCvTpl]     = useState<CvTemplate>("ats_professional");
+  const [cvTpl, setCvTpl]     = useState<CvTemplate>("nordic_executive");
   const [appTpl, setAppTpl]   = useState<AppTemplate>("corporate");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -336,7 +336,10 @@ function DokumenterTab() {
   useEffect(() => {
     apiGet<{ default_cv_template: string; default_app_template: string }>("/export/preferences")
       .then(p => {
-        if (p.default_cv_template) setCvTpl(p.default_cv_template as CvTemplate);
+        const NEW_CV_TEMPLATES = ["nordic_executive", "clean_professional", "modern_nordic", "minimal_nordic", "bold_impact"];
+        if (p.default_cv_template && NEW_CV_TEMPLATES.includes(p.default_cv_template)) {
+          setCvTpl(p.default_cv_template as CvTemplate);
+        }
         if (p.default_app_template) setAppTpl(p.default_app_template as AppTemplate);
       })
       .catch(() => {})

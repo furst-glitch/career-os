@@ -37,12 +37,18 @@ _SCRAPE_HEADERS = {
 # Listet i prioriteret rækkefølge
 _SOURCE_CONTENT_HINTS: dict[str, list[str]] = {
     "jobindex": [
-        "PosAdStory", "jobad-body", "jobad-content", "job-description",
-        "job-text", "job-body", "description",
+        # Current (2024+) Jobindex HTML
+        "PaidJob-inner", "jobad-body", "jix_jobtext",
+        # Legacy hints
+        "PosAdStory", "job-description", "job-text",
     ],
     "ofir": [
         "job-post-body", "job-description", "description-text",
-        "job-text", "job_description", "jobtext",
+        "job-text", "job_description", "jobtext", "jobad",
+    ],
+    "jobnet": [
+        "job-posting", "jobpostingdescription", "job-description",
+        "jobtext", "job-body",
     ],
 }
 

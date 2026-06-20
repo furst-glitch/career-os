@@ -330,7 +330,7 @@ export default function ApplyWorkspacePage() {
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
             <Link href="/jobs" className="hover:text-blue-600">Jobs</Link>
             <span>/</span>
-            <span>Auto Apply</span>
+            <span>Oversigt</span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{job.title}</h1>
           <p className="text-slate-500">{job.company}{job.location ? ` · ${job.location}` : ""}</p>

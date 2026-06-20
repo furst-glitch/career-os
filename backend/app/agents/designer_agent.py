@@ -20,57 +20,103 @@ from app.providers.litellm_provider import LiteLLMProvider
 # ── Template stil-profiler ────────────────────────────────────────────────────
 
 _CV_STYLES_DA: dict[str, str] = {
+    # ── Nye AI-genererede CV templates ───────────────────────────────────────────
+    "nordic_executive": (
+        "TEMPLATE: Nordic Executive (to-kolonne med mørk sidebar)\n"
+        "EGNET TIL: FM, indkøb, drift, ESG, projektledelse, seniorroller\n"
+        "KRITISK STRUKTUR — dette er et TO-KOLONNE LAYOUT:\n"
+        "  VENSTRE SIDEBAR modtager KUN sektioner med disse navne (brug præcis disse navne):\n"
+        "    ## Kompetencer   — liste af nøglekompetencer som bullets\n"
+        "    ## Uddannelse    — grader og institutioner\n"
+        "    ## Sprog         — sprogkompetencer\n"
+        "    ## Certifikater  — relevante certifikater\n"
+        "  HØJRE KOLONNE modtager:\n"
+        "    ## Profil        — 3-4 linjer karrierefortælling\n"
+        "    ## Erhvervserfaring — omvendt kronologisk\n"
+        "SEKTIONSRÆKKEFØLGE I TEKSTEN:\n"
+        "1. ## Profil\n"
+        "2. ## Erhvervserfaring\n"
+        "3. ## Kompetencer\n"
+        "4. ## Uddannelse\n"
+        "5. ## Sprog (kun hvis relevant)\n"
+        "Brug PRÆCIS disse sektionsnavne — variationer som 'Kernekompetencer' bruges ikke.\n"
+        "Maks 450 ord total. Maks 5 bullets per stilling. Maks 8 bullets i Kompetencer."
+    ),
+    "clean_professional": (
+        "TEMPLATE: Clean Professional (en-kolonne, konservativt)\n"
+        "EGNET TIL: finans, jura, offentlig sektor, rådgivning\n"
+        "Rene sektioner, ATS-optimal:\n"
+        "- Sektioner: ## Profil, ## Erhvervserfaring, ## Kompetencer, ## Uddannelse\n"
+        "- Achievement-bullets med DKK/%-resultater\n"
+        "- Formel og præcis tone\n"
+        "- Maks 550 ord total"
+    ),
+    "modern_nordic": (
+        "TEMPLATE: Modern Nordic (en-kolonne, mørk header)\n"
+        "EGNET TIL: tech, marketing, FM, konsulenter\n"
+        "Moderne og engagerende:\n"
+        "- Sektioner: ## Profil, ## Erhvervserfaring, ## Kompetencer, ## Uddannelse\n"
+        "- Stærk åbnende profiltekst\n"
+        "- Aktive verber og konkrete resultater\n"
+        "- Maks 500 ord total"
+    ),
+    "minimal_nordic": (
+        "TEMPLATE: Minimal Nordic (en-kolonne, minimalistisk)\n"
+        "EGNET TIL: senior roller, consulting, tech\n"
+        "Skandinavisk minimalisme — hvert ord tæller:\n"
+        "- Sektioner: ## Profil, ## Erhvervserfaring, ## Kompetencer, ## Uddannelse\n"
+        "- Maks 4 bulletpoints per stilling\n"
+        "- Ingen adjektiver uden konkret indhold\n"
+        "- Fakta og tal frem for beskrivelser\n"
+        "- Maks 350 ord total"
+    ),
+    "bold_impact": (
+        "TEMPLATE: Bold Impact (en-kolonne, stor mørk header)\n"
+        "EGNET TIL: salg, BD, marketing, startups\n"
+        "Resultater og impact i fokus:\n"
+        "- Sektioner: ## Profil, ## Erhvervserfaring, ## Kompetencer, ## Uddannelse\n"
+        "- Åbn med kraftfuld profiltekst der kommunikerer impact\n"
+        "- Bullets startende med stærkt handlingsverbum + konkret tal\n"
+        "- Selvsikker og direkte tone\n"
+        "- Maks 500 ord total"
+    ),
+    # ── Legacy templates (structured CV data) ────────────────────────────────────
     "ats_professional": (
         "TEMPLATE: ATS Professional\n"
         "EGNET TIL: offentlig sektor, finans, jura, konservative brancher\n"
         "Prioritér ATS-kompatibilitet over alt andet:\n"
-        "- Standard sektionsnavne: Profil, Erhvervserfaring, Kompetencer, Uddannelse, Certifikater\n"
+        "- Standard sektionsnavne: Profil, Erhvervserfaring, Kompetencer, Uddannelse\n"
         "- Inkludér præcise nøgleord fra jobopslaget i teksten\n"
         "- Bulletpoints med målbare resultater (%, DKK, antal medarbejdere)\n"
         "- Ingen tabeller, spalter eller kreativ formatering\n"
-        "- Enkel kronologisk rækkefølge\n"
         "- Maks 600 ord total"
     ),
     "modern_professional": (
         "TEMPLATE: Modern Professional\n"
         "EGNET TIL: FM, indkøb, drift, ESG-roller\n"
-        "Professionel og engagerende — balancér ATS med personlighed:\n"
+        "Professionel og engagerende:\n"
         "- Stærk profiltekst der fortæller karrierefortællingen\n"
         "- Achievement-bullets med kvantificerede resultater\n"
         "- Kompetencer grupperet efter kategori\n"
-        "- Naturlig tone der indbyder til interview\n"
-        "- Undgå klichéer og tomme fraser"
+        "- Maks 500 ord total"
     ),
     "executive": (
         "TEMPLATE: Executive\n"
         "EGNET TIL: C-suite nærliggende roller, senior strategiske stillinger\n"
-        "Autoritet og strategisk perspektiv i hvert ord:\n"
-        "- Åbn med en stærk executive summary (4-5 linjer, P&L/lederskab/transformation)\n"
-        "- Resultater i DKK/EUR, teamstørrelser, markedsandele, EBITDA\n"
-        "- Fremhæv bestyrelseserfaring, M&A, strategiske skift\n"
-        "- Formel, selvsikker og præcis tone\n"
-        "- Kun lederrollernes budget/personaleansvar — udelad administrative detaljer"
+        "Autoritet og strategisk perspektiv:\n"
+        "- Åbn med executive summary (4-5 linjer)\n"
+        "- Resultater i DKK/EUR, teamstørrelser, EBITDA\n"
+        "- Formel og selvsikker tone\n"
+        "- Maks 550 ord total"
     ),
-    "minimal_nordic": (
+    "minimal_nordic_legacy": (
         "TEMPLATE: Minimal Nordic\n"
-        "EGNET TIL: tech, consulting, roller der værdsætter kortfattethed\n"
-        "Skandinavisk minimalisme — hvert ord tæller:\n"
-        "- Maks 4 bulletpoints per stilling\n"
-        "- Korteste mulige beskrivelser der stadig er præcise\n"
-        "- Ingen adjektiver uden konkret indhold\n"
-        "- Fakta og tal frem for poetiske beskrivelser\n"
-        "- Hvidt rum er en feature, ikke en fejl\n"
-        "- Maks 400 ord total"
+        "Skandinavisk minimalisme — maks 4 bullets per stilling — maks 400 ord"
     ),
     "creative_professional": (
         "TEMPLATE: Creative Professional\n"
         "EGNET TIL: marketing, kommunikation, kreative roller\n"
-        "Personlig stemme og differentieret udtryk:\n"
-        "- Åbn med en profiltekst der viser personlighed og passion\n"
-        "- Narrativt flow der forbinder erfaringerne\n"
-        "- Brug aktive og levende verber\n"
-        "- Vis unikke projekter og kreative løsninger\n"
-        "- Stadig professionel men tydeligt individuelt præg"
+        "Personlig stemme og differentieret udtryk — maks 500 ord"
     ),
 }
 
@@ -137,56 +183,93 @@ _APP_STYLES_DA: dict[str, str] = {
 }
 
 _CV_STYLES_EN: dict[str, str] = {
+    # ── New AI-generated CV templates ────────────────────────────────────────────
+    "nordic_executive": (
+        "TEMPLATE: Nordic Executive (two-column with dark sidebar)\n"
+        "BEST FOR: FM, procurement, operations, ESG, project management, senior roles\n"
+        "CRITICAL STRUCTURE — this is a TWO-COLUMN LAYOUT:\n"
+        "  LEFT SIDEBAR receives ONLY sections with these exact names:\n"
+        "    ## Skills        — bullet list of key competencies\n"
+        "    ## Education     — degrees and institutions\n"
+        "    ## Languages     — language proficiencies\n"
+        "    ## Certifications — relevant certificates\n"
+        "  RIGHT COLUMN receives:\n"
+        "    ## Profile       — 3-4 lines career narrative\n"
+        "    ## Work Experience — reverse chronological\n"
+        "SECTION ORDER IN TEXT:\n"
+        "1. ## Profile\n"
+        "2. ## Work Experience\n"
+        "3. ## Skills\n"
+        "4. ## Education\n"
+        "5. ## Languages (only if relevant)\n"
+        "Use EXACTLY these section names.\n"
+        "Max 450 words total. Max 5 bullets per position. Max 8 bullets in Skills."
+    ),
+    "clean_professional": (
+        "TEMPLATE: Clean Professional (single column, conservative)\n"
+        "BEST FOR: finance, legal, public sector, consulting\n"
+        "- Sections: ## Profile, ## Work Experience, ## Skills, ## Education\n"
+        "- Achievement bullets with verified numbers\n"
+        "- Formal and precise tone\n"
+        "- Max 550 words total"
+    ),
+    "modern_nordic": (
+        "TEMPLATE: Modern Nordic (single column, dark header)\n"
+        "BEST FOR: tech, marketing, FM, consultants\n"
+        "- Sections: ## Profile, ## Work Experience, ## Skills, ## Education\n"
+        "- Strong opening profile text\n"
+        "- Active verbs and concrete results\n"
+        "- Max 500 words total"
+    ),
+    "minimal_nordic": (
+        "TEMPLATE: Minimal Nordic (single column, minimalist)\n"
+        "BEST FOR: senior roles, consulting, tech\n"
+        "- Sections: ## Profile, ## Work Experience, ## Skills, ## Education\n"
+        "- Max 4 bullets per position\n"
+        "- Facts and numbers only — no adjectives without content\n"
+        "- Max 350 words total"
+    ),
+    "bold_impact": (
+        "TEMPLATE: Bold Impact (single column, large dark header)\n"
+        "BEST FOR: sales, BD, marketing, startups\n"
+        "- Sections: ## Profile, ## Work Experience, ## Skills, ## Education\n"
+        "- Open with powerful impact-focused profile\n"
+        "- Bullets starting with strong action verb + concrete number\n"
+        "- Max 500 words total"
+    ),
+    # ── Legacy templates ──────────────────────────────────────────────────────────
     "ats_professional": (
         "TEMPLATE: ATS Professional\n"
         "BEST FOR: public sector, finance, legal, conservative industries\n"
         "Maximize ATS compatibility above all:\n"
-        "- Standard section names: Profile, Work Experience, Skills, Education, Certifications\n"
+        "- Standard section names: Profile, Work Experience, Skills, Education\n"
         "- Include exact keywords from the job posting throughout\n"
-        "- Bullet points with measurable verified results (%, numbers, team size)\n"
+        "- Bullet points with measurable verified results\n"
         "- No tables, columns, or creative formatting\n"
-        "- Simple reverse-chronological order\n"
         "- Max 600 words total"
     ),
     "modern_professional": (
         "TEMPLATE: Modern Professional\n"
         "BEST FOR: FM, procurement, operations, ESG roles\n"
-        "Professional and engaging — balance ATS with personality:\n"
         "- Strong profile summary telling the career story\n"
-        "- Achievement bullets with quantified verified results\n"
-        "- Skills grouped by category\n"
-        "- Natural tone that invites interview\n"
-        "- Avoid clichés and empty phrases"
+        "- Achievement bullets with quantified results\n"
+        "- Max 500 words total"
     ),
     "executive": (
         "TEMPLATE: Executive\n"
         "BEST FOR: C-suite adjacent, senior strategic roles\n"
-        "Authority and strategic perspective in every word:\n"
-        "- Open with strong executive summary (4-5 lines, P&L/leadership/transformation)\n"
-        "- Results in USD/EUR, team sizes, market share, EBITDA\n"
-        "- Highlight board experience, M&A, strategic pivots\n"
-        "- Formal, confident, and precise tone\n"
-        "- Leadership roles with budget/headcount — omit administrative details"
+        "- Open with strong executive summary (4-5 lines)\n"
+        "- Results in amounts, team sizes, EBITDA\n"
+        "- Formal, confident, precise tone\n"
+        "- Max 550 words total"
     ),
-    "minimal_nordic": (
-        "TEMPLATE: Minimal Nordic\n"
-        "BEST FOR: tech, consulting, roles valuing brevity\n"
-        "Scandinavian minimalism — every word counts:\n"
-        "- Max 4 bullets per position\n"
-        "- Shortest possible descriptions that remain precise\n"
-        "- No adjectives without concrete content\n"
-        "- Facts and numbers over poetic descriptions\n"
-        "- Max 400 words total"
+    "minimal_nordic_legacy": (
+        "TEMPLATE: Minimal Nordic — max 4 bullets per position — max 400 words"
     ),
     "creative_professional": (
         "TEMPLATE: Creative Professional\n"
         "BEST FOR: marketing, communications, creative roles\n"
-        "Personal voice and differentiated expression:\n"
-        "- Open with a profile that shows personality and passion\n"
-        "- Narrative flow connecting experiences\n"
-        "- Active and vivid verbs\n"
-        "- Show unique projects and creative solutions\n"
-        "- Professional but with clear individual character"
+        "- Personal voice and narrative flow — max 500 words"
     ),
 }
 

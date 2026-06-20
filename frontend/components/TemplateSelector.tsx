@@ -5,11 +5,11 @@ import React from "react";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type CvTemplate =
-  | "ats_professional"
-  | "modern_professional"
-  | "executive"
+  | "nordic_executive"
+  | "clean_professional"
+  | "modern_nordic"
   | "minimal_nordic"
-  | "creative_professional";
+  | "bold_impact";
 
 export type AppTemplate =
   | "corporate"
@@ -22,29 +22,29 @@ export type AppTemplate =
 
 export const CV_TEMPLATES: Array<{ id: CvTemplate; label: string; desc: string }> = [
   {
-    id: "ats_professional",
-    label: "ATS Professional",
-    desc: "Sort/hvid, ATS-optimeret, maksimal parser-kompatibilitet",
+    id: "nordic_executive",
+    label: "Nordic Executive",
+    desc: "Mørk navy sidebar, guld-accenter, to-kolonne — FM, ESG, ledelse",
   },
   {
-    id: "modern_professional",
-    label: "Modern Professional",
-    desc: "Navy sidebar, blå accenter, moderne to-kolonne layout",
+    id: "clean_professional",
+    label: "Clean Professional",
+    desc: "Enkelt en-kolonne, blå accenter — finans, jura, offentlig",
   },
   {
-    id: "executive",
-    label: "Executive",
-    desc: "Premium lederprofil, Times, guld-accenter, brede marginer",
+    id: "modern_nordic",
+    label: "Modern Nordic",
+    desc: "Mørk header, venstre accent-stribe — tech, marketing",
   },
   {
     id: "minimal_nordic",
     label: "Minimal Nordic",
-    desc: "Skandinavisk design, meget luft, grå toner",
+    desc: "Skandinavisk minimalisme, maks. luft — konsulenter, kreative",
   },
   {
-    id: "creative_professional",
-    label: "Creative Professional",
-    desc: "Teal header, moderne visuelt udtryk, pill-tags til skills",
+    id: "bold_impact",
+    label: "Bold Impact",
+    desc: "Tyk mørk header, amber accent — salg, startup, ledelse",
   },
 ];
 
@@ -78,44 +78,35 @@ export const APP_TEMPLATES: Array<{ id: AppTemplate; label: string; desc: string
 
 // ── Mini preview thumbnails ────────────────────────────────────────────────────
 
-function CvPreviewAts() {
+function CvPreviewNordicExecutive() {
   return (
-    <div className="h-full w-full bg-white p-1.5 font-sans">
-      <div className="mb-0.5 h-2 w-20 bg-slate-900 rounded-sm" />
-      <div className="mb-1 h-1 w-14 bg-slate-400 rounded-sm" />
-      <div className="mb-0.5 border-t border-slate-900" />
-      <div className="space-y-0.5">
-        {[14, 18, 12, 16].map((w, i) => (
-          <div key={i} className={`h-0.5 bg-slate-300 rounded-sm w-${w}/20`} />
-        ))}
-      </div>
-      <div className="mt-1 mb-0.5 border-t border-slate-900" />
-      <div className="space-y-0.5">
-        {[18, 16, 14].map((w, i) => (
-          <div key={i} className={`h-0.5 bg-slate-300 rounded-sm w-${w}/20`} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CvPreviewModern() {
-  return (
-    <div className="h-full w-full flex">
-      <div className="w-5 bg-blue-900 flex-shrink-0 p-1">
-        <div className="mb-1 h-1.5 w-3 bg-white rounded-sm opacity-90" />
-        <div className="mb-2 h-0.5 w-3 bg-blue-400 rounded-sm" />
-        <div className="space-y-0.5">
-          {[3, 2.5, 3, 2.5].map((w, i) => (
-            <div key={i} style={{ width: `${w * 4}px` }} className="h-0.5 bg-blue-300 opacity-60 rounded-sm" />
-          ))}
-        </div>
-      </div>
-      <div className="flex-1 p-1.5 bg-white">
-        <div className="mb-0.5 h-1 w-full bg-blue-600 opacity-20 rounded-sm" />
+    <div className="h-full w-full flex overflow-hidden">
+      {/* Dark left sidebar */}
+      <div className="w-6 bg-[#1a1a2e] flex-shrink-0 p-1 pt-2">
+        <div className="mb-0.5 h-0.5 w-4 bg-[#c8a96e] rounded-sm" />
         <div className="space-y-0.5 mt-1">
-          {[14, 12, 16, 10, 14, 12].map((w, i) => (
-            <div key={i} className={`h-0.5 bg-slate-200 rounded-sm`} style={{ width: `${w * 4}px` }} />
+          {[3, 3.5, 2.5, 3].map((w, i) => (
+            <div key={i} style={{ width: `${w * 4}px` }} className="h-0.5 bg-[#9999bb] rounded-sm opacity-70" />
+          ))}
+        </div>
+        <div className="mt-1.5 mb-0.5 h-0.5 w-4 bg-[#c8a96e] rounded-sm" />
+        <div className="space-y-0.5">
+          {[3, 3.5, 2.5].map((w, i) => (
+            <div key={i} style={{ width: `${w * 4}px` }} className="h-0.5 bg-[#9999bb] rounded-sm opacity-70" />
+          ))}
+        </div>
+      </div>
+      {/* White right column */}
+      <div className="flex-1 bg-white">
+        {/* Header bar */}
+        <div className="bg-[#1a1a2e] px-1.5 py-1 flex items-end gap-2">
+          <div className="h-1.5 w-10 bg-white rounded-sm opacity-90" />
+          <div className="h-0.5 w-8 bg-[#c8a96e] rounded-sm" />
+        </div>
+        <div className="p-1.5 space-y-0.5">
+          <div className="h-0.5 w-8 bg-[#1a1a2e] rounded-sm opacity-40" />
+          {[14, 12, 16, 10, 14].map((w, i) => (
+            <div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{ width: `${w * 3}px` }} />
           ))}
         </div>
       </div>
@@ -123,16 +114,14 @@ function CvPreviewModern() {
   );
 }
 
-function CvPreviewExecutive() {
+function CvPreviewCleanProfessional() {
   return (
     <div className="h-full w-full bg-white px-2 py-1.5">
-      <div className="text-center mb-0.5">
-        <div className="mx-auto h-2 w-16 bg-slate-900 rounded-sm" />
-      </div>
-      <div className="mb-0.5 border-t-2 border-yellow-600 mt-0.5" />
-      <div className="mb-0.5 border-t border-yellow-400" />
-      <div className="mt-1 mb-0.5 h-0.5 w-10 bg-yellow-600 rounded-sm" />
-      <div className="border-t border-yellow-300 mb-0.5" />
+      <div className="mb-0.5 h-2 w-20 bg-slate-900 rounded-sm" />
+      <div className="mb-1 h-0.5 w-14 bg-[#2c5282] rounded-sm" />
+      <div className="border-t-2 border-[#2c5282] mb-1" />
+      <div className="mb-0.5 h-0.5 w-10 bg-[#2c5282] opacity-60 rounded-sm" />
+      <div className="border-t border-slate-200 mb-0.5" />
       <div className="space-y-0.5">
         {[18, 16, 14, 18, 16].map((w, i) => (
           <div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{ width: `${w * 3}px` }} />
@@ -142,19 +131,43 @@ function CvPreviewExecutive() {
   );
 }
 
-function CvPreviewNordic() {
+function CvPreviewModernNordic() {
   return (
-    <div className="h-full w-full bg-white px-2 py-2">
-      <div className="mb-0.5 h-2.5 w-20 bg-slate-700 rounded-sm opacity-80" />
-      <div className="mb-1 h-1 w-14 bg-slate-400 rounded-sm opacity-70" />
-      <div className="mb-1.5 border-t border-slate-200" />
-      <div className="space-y-1">
-        {[3, 3].map((_, gi) => (
+    <div className="h-full w-full bg-white overflow-hidden flex">
+      {/* Left accent strip */}
+      <div className="w-1 bg-[#2b4c7e] flex-shrink-0" />
+      <div className="flex-1">
+        {/* Dark header band */}
+        <div className="bg-slate-800 px-1.5 py-1.5">
+          <div className="h-1.5 w-14 bg-white rounded-sm opacity-90" />
+          <div className="mt-0.5 h-0.5 w-10 bg-slate-400 rounded-sm opacity-60" />
+        </div>
+        <div className="p-1.5 space-y-0.5">
+          <div className="flex items-center gap-1 mb-0.5">
+            <div className="h-1.5 w-1.5 bg-[#2b4c7e] rounded-sm flex-shrink-0" />
+            <div className="h-0.5 w-8 bg-slate-400 rounded-sm" />
+          </div>
+          {[14, 12, 16, 10, 14].map((w, i) => (
+            <div key={i} className="h-0.5 bg-slate-200 rounded-sm ml-2.5" style={{ width: `${w * 3}px` }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CvPreviewMinimalNordic() {
+  return (
+    <div className="h-full w-full bg-white px-3 py-2.5">
+      <div className="mb-0.5 h-2 w-20 bg-slate-700 rounded-sm opacity-80" />
+      <div className="mb-2 h-0.5 w-14 bg-slate-400 rounded-sm opacity-50" />
+      <div className="space-y-1.5">
+        {[0, 1].map((gi) => (
           <div key={gi}>
-            <div className="mb-0.5 h-0.5 w-6 bg-slate-400 rounded-sm opacity-60" />
-            <div className="space-y-0.5 ml-5">
-              {[14, 12, 16].map((w, i) => (
-                <div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{ width: `${w * 3}px` }} />
+            <div className="mb-0.5 h-0.5 w-6 bg-slate-300 rounded-sm" />
+            <div className="space-y-0.5">
+              {[14, 16, 12].map((w, i) => (
+                <div key={i} className="h-0.5 bg-slate-100 rounded-sm" style={{ width: `${w * 3}px` }} />
               ))}
             </div>
           </div>
@@ -164,25 +177,25 @@ function CvPreviewNordic() {
   );
 }
 
-function CvPreviewCreative() {
+function CvPreviewBoldImpact() {
   return (
     <div className="h-full w-full bg-white overflow-hidden">
-      <div className="bg-teal-600 px-1.5 py-1">
-        <div className="h-1.5 w-14 bg-white opacity-90 rounded-sm" />
-        <div className="mt-0.5 h-0.5 w-10 bg-teal-200 rounded-sm" />
+      {/* Thick dark header */}
+      <div className="bg-slate-900 px-1.5 py-2">
+        <div className="h-2 w-16 bg-white rounded-sm opacity-90" />
+        <div className="mt-0.5 h-0.5 w-10 bg-amber-400 rounded-sm" />
       </div>
-      <div className="bg-teal-800 h-0.5" />
       <div className="p-1.5">
-        <div className="mb-0.5 h-0.5 w-8 bg-teal-600 rounded-sm" />
-        <div className="border-t border-teal-400 mb-0.5" />
-        <div className="space-y-0.5">
-          {[16, 14, 12].map((w, i) => (
-            <div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{ width: `${w * 3}px` }} />
-          ))}
+        <div className="mb-0.5 flex items-center gap-1">
+          <div className="h-1 w-1 bg-amber-400 rounded-sm flex-shrink-0" />
+          <div className="h-0.5 w-8 bg-slate-600 rounded-sm" />
         </div>
-        <div className="mt-1 flex gap-0.5 flex-wrap">
-          {[3, 4, 3, 5].map((w, i) => (
-            <div key={i} className="h-1.5 bg-teal-100 rounded-full" style={{ width: `${w * 4}px` }} />
+        <div className="rounded bg-amber-50 px-1 py-0.5 mb-0.5">
+          <div className="h-0.5 w-10 bg-slate-300 rounded-sm" />
+        </div>
+        <div className="space-y-0.5">
+          {[14, 12, 16, 10].map((w, i) => (
+            <div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{ width: `${w * 3}px` }} />
           ))}
         </div>
       </div>
@@ -191,11 +204,11 @@ function CvPreviewCreative() {
 }
 
 const CV_PREVIEWS: Record<string, PreviewComponent> = {
-  ats_professional:    CvPreviewAts,
-  modern_professional: CvPreviewModern,
-  executive:           CvPreviewExecutive,
-  minimal_nordic:      CvPreviewNordic,
-  creative_professional: CvPreviewCreative,
+  nordic_executive:    CvPreviewNordicExecutive,
+  clean_professional:  CvPreviewCleanProfessional,
+  modern_nordic:       CvPreviewModernNordic,
+  minimal_nordic:      CvPreviewMinimalNordic,
+  bold_impact:         CvPreviewBoldImpact,
 };
 
 function AppPreviewCorporate() {
@@ -354,6 +367,113 @@ function TemplateGrid<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+// ── Structured CV templates (Master CV — legacy export system) ────────────────
+
+export type StructuredCvTemplate =
+  | "ats_professional"
+  | "modern_professional"
+  | "executive"
+  | "minimal_nordic"
+  | "creative_professional";
+
+export const STRUCTURED_CV_TEMPLATES: Array<{ id: StructuredCvTemplate; label: string; desc: string }> = [
+  { id: "ats_professional",    label: "ATS Professional",    desc: "Sort/hvid, ATS-optimeret, maksimal parser-kompatibilitet" },
+  { id: "modern_professional", label: "Modern Professional", desc: "Navy sidebar, blå accenter, moderne to-kolonne layout" },
+  { id: "executive",           label: "Executive",           desc: "Premium lederprofil, guld-accenter, brede marginer" },
+  { id: "minimal_nordic",      label: "Minimal Nordic",      desc: "Skandinavisk design, meget luft, grå toner" },
+  { id: "creative_professional",label: "Creative",           desc: "Teal header, moderne visuelt udtryk, pill-tags" },
+];
+
+function StructuredPreviewAts() {
+  return (
+    <div className="h-full w-full bg-white p-1.5">
+      <div className="mb-0.5 h-2 w-20 bg-slate-900 rounded-sm" />
+      <div className="mb-1 h-1 w-14 bg-slate-400 rounded-sm" />
+      <div className="mb-0.5 border-t border-slate-900" />
+      <div className="space-y-0.5">{[14,18,12,16].map((w,i)=><div key={i} className="h-0.5 bg-slate-300 rounded-sm" style={{width:`${w*4}px`}} />)}</div>
+      <div className="mt-1 mb-0.5 border-t border-slate-900" />
+      <div className="space-y-0.5">{[18,16,14].map((w,i)=><div key={i} className="h-0.5 bg-slate-300 rounded-sm" style={{width:`${w*4}px`}} />)}</div>
+    </div>
+  );
+}
+function StructuredPreviewModern() {
+  return (
+    <div className="h-full w-full flex">
+      <div className="w-5 bg-blue-900 flex-shrink-0 p-1">
+        <div className="mb-1 h-1.5 w-3 bg-white rounded-sm opacity-90" />
+        <div className="mb-2 h-0.5 w-3 bg-blue-400 rounded-sm" />
+        <div className="space-y-0.5">{[3,2.5,3,2.5].map((w,i)=><div key={i} style={{width:`${w*4}px`}} className="h-0.5 bg-blue-300 opacity-60 rounded-sm" />)}</div>
+      </div>
+      <div className="flex-1 p-1.5 bg-white">
+        <div className="mb-0.5 h-1 w-full bg-blue-600 opacity-20 rounded-sm" />
+        <div className="space-y-0.5 mt-1">{[14,12,16,10,14,12].map((w,i)=><div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{width:`${w*4}px`}} />)}</div>
+      </div>
+    </div>
+  );
+}
+function StructuredPreviewExecutive() {
+  return (
+    <div className="h-full w-full bg-white px-2 py-1.5">
+      <div className="text-center mb-0.5"><div className="mx-auto h-2 w-16 bg-slate-900 rounded-sm" /></div>
+      <div className="mb-0.5 border-t-2 border-yellow-600 mt-0.5" />
+      <div className="mb-0.5 border-t border-yellow-400" />
+      <div className="mt-1 mb-0.5 h-0.5 w-10 bg-yellow-600 rounded-sm" />
+      <div className="border-t border-yellow-300 mb-0.5" />
+      <div className="space-y-0.5">{[18,16,14,18,16].map((w,i)=><div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{width:`${w*3}px`}} />)}</div>
+    </div>
+  );
+}
+function StructuredPreviewNordic() {
+  return (
+    <div className="h-full w-full bg-white px-2 py-2">
+      <div className="mb-0.5 h-2.5 w-20 bg-slate-700 rounded-sm opacity-80" />
+      <div className="mb-1 h-1 w-14 bg-slate-400 rounded-sm opacity-70" />
+      <div className="mb-1.5 border-t border-slate-200" />
+      <div className="space-y-1">{[0,1].map((_,gi)=><div key={gi}><div className="mb-0.5 h-0.5 w-6 bg-slate-400 rounded-sm opacity-60" /><div className="space-y-0.5 ml-5">{[14,12,16].map((w,i)=><div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{width:`${w*3}px`}} />)}</div></div>)}</div>
+    </div>
+  );
+}
+function StructuredPreviewCreative() {
+  return (
+    <div className="h-full w-full bg-white overflow-hidden">
+      <div className="bg-teal-600 px-1.5 py-1"><div className="h-1.5 w-14 bg-white opacity-90 rounded-sm" /><div className="mt-0.5 h-0.5 w-10 bg-teal-200 rounded-sm" /></div>
+      <div className="bg-teal-800 h-0.5" />
+      <div className="p-1.5">
+        <div className="mb-0.5 h-0.5 w-8 bg-teal-600 rounded-sm" />
+        <div className="border-t border-teal-400 mb-0.5" />
+        <div className="space-y-0.5">{[16,14,12].map((w,i)=><div key={i} className="h-0.5 bg-slate-200 rounded-sm" style={{width:`${w*3}px`}} />)}</div>
+        <div className="mt-1 flex gap-0.5 flex-wrap">{[3,4,3,5].map((w,i)=><div key={i} className="h-1.5 bg-teal-100 rounded-full" style={{width:`${w*4}px`}} />)}</div>
+      </div>
+    </div>
+  );
+}
+
+const STRUCTURED_CV_PREVIEWS: Record<string, PreviewComponent> = {
+  ats_professional:     StructuredPreviewAts,
+  modern_professional:  StructuredPreviewModern,
+  executive:            StructuredPreviewExecutive,
+  minimal_nordic:       StructuredPreviewNordic,
+  creative_professional: StructuredPreviewCreative,
+};
+
+interface StructuredCvTemplateSelectorProps {
+  selected: StructuredCvTemplate;
+  onSelect: (id: StructuredCvTemplate) => void;
+  columns?: 3 | 5;
+}
+
+export function StructuredCvTemplateSelector({ selected, onSelect, columns }: StructuredCvTemplateSelectorProps) {
+  return (
+    <TemplateGrid
+      templates={STRUCTURED_CV_TEMPLATES}
+      previews={STRUCTURED_CV_PREVIEWS}
+      selected={selected}
+      onSelect={onSelect}
+      columns={columns}
+    />
   );
 }
 

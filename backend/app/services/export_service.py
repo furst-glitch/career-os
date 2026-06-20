@@ -437,8 +437,24 @@ def _generated_cv_to_pdf(title: str, content: str, profile: dict) -> bytes:
     return bytes(pdf.output())
 
 
-def export_generated_cv_as_pdf(title: str, content: str, profile: dict) -> bytes:
-    return _generated_cv_to_pdf(title, content, profile)
+def export_generated_cv_as_pdf(
+    title: str,
+    content: str,
+    profile: dict,
+    template: str = "nordic_executive",
+) -> bytes:
+    from app.services.cv_pdf_templates import render_generated_cv_pdf, GENERATED_CV_TEMPLATES
+    candidate = {
+        "name":     profile.get("full_name") or profile.get("display_name") or "",
+        "title":    "",
+        "company":  "",
+        "email":    profile.get("email") or "",
+        "phone":    profile.get("phone") or "",
+        "location": profile.get("location") or "",
+        "linkedin": profile.get("linkedin_url") or "",
+    }
+    resolved = template if template in GENERATED_CV_TEMPLATES else "nordic_executive"
+    return render_generated_cv_pdf(content, candidate, resolved)
 
 
 def export_generated_cv_as_docx(title: str, content: str, profile: dict) -> bytes:

@@ -243,7 +243,7 @@ async def quickgen(
     except Exception:
         prefs = {}
     user_template = prefs.get("default_cv_template" if is_cv else "default_app_template") or (
-        "ats_professional" if is_cv else "corporate"
+        "nordic_executive" if is_cv else "corporate"
     )
 
     async def process():

@@ -54,7 +54,7 @@ class GenerationPipeline:
         uid, db = self.user_id, self.supabase
         job_ctx = self._job_ctx(input_data)
         lang = input_data.get("language", "da")
-        template = input_data.get("template", "ats_professional")
+        template = input_data.get("template", "nordic_executive")
         da = lang == "da"
 
         # Trin 1: CVAgent skriver udkast

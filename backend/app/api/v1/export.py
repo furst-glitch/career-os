@@ -29,8 +29,12 @@ router = APIRouter(prefix="/export", tags=["Export"])
 from pydantic import BaseModel
 
 CV_TEMPLATES = {
+    # Legacy structured-data templates
     "ats_professional", "modern_professional", "executive",
     "minimal_nordic", "creative_professional",
+    # AI plain-text templates
+    "nordic_executive", "clean_professional", "modern_nordic",
+    "bold_impact",
 }
 APP_TEMPLATES = {"corporate", "executive", "modern", "technical", "graduate"}
 
@@ -145,7 +149,8 @@ async def export_document_pdf(
     is_cv = doc_type in ("cv", "cv_version") or title.startswith("CV")
 
     if is_cv:
-        pdf_bytes = export_generated_cv_as_pdf(title, content, profile)
+        cv_tpl = profile.get("default_cv_template") or "nordic_executive"
+        pdf_bytes = export_generated_cv_as_pdf(title, content, profile, template=cv_tpl)
     else:
         resolved = template if template in APP_TEMPLATES else (
             profile.get("default_app_template") or "corporate"
@@ -184,6 +189,7 @@ async def export_document_docx(
     is_cv = doc_type in ("cv", "cv_version") or title.startswith("CV")
 
     if is_cv:
+        cv_tpl = profile.get("default_cv_template") or "nordic_executive"
         docx_bytes = export_generated_cv_as_docx(title, content, profile)
     else:
         resolved = template if template in APP_TEMPLATES else (
@@ -216,7 +222,7 @@ async def get_template_preferences(
     )
     data = row.data[0] if row.data else {}
     return {
-        "default_cv_template": data.get("default_cv_template") or "ats_professional",
+        "default_cv_template": data.get("default_cv_template") or "nordic_executive",
         "default_app_template": data.get("default_app_template") or "corporate",
     }
 

@@ -47,8 +47,12 @@ class JobDiscoveryService:
         """
         active_sources = [s for s in (sources or DEFAULT_SOURCES) if s in SOURCES]
 
-        # Fetch career memory snapshot for match scoring
-        snapshot = MemorySnapshotService(self.db).snapshot(user_id)
+        # Fetch career memory snapshot for match scoring (best-effort)
+        try:
+            snapshot = MemorySnapshotService(self.db).snapshot(user_id)
+        except Exception as exc:
+            logger.warning("MemorySnapshot failed — scoring disabled: %s", exc)
+            snapshot = {}
 
         # ── Trin 1: Fetch alle sources parallelt ─────────────────────────────
         tasks = {
@@ -73,18 +77,28 @@ class JobDiscoveryService:
                     seen.add(key)
                     all_results.append(r)
 
-        # ── Trin 3: Initial match scoring på teaser-data ─────────────────────
+        # ── Trin 3: Initial match scoring på teaser-data (parallelt) ────────
         job_svc = JobService(self.db)
-        enriched: list[dict] = []
-        for r in all_results:
-            d = r.to_dict()
-            match = job_svc.compute_match_score(d, snapshot)
-            d["match_score"] = match["total"]
-            d["match_breakdown"] = match["breakdown"]
-            d["matched_skills"] = match["matched_skills"]
-            d["missing_requirements"] = match["missing_requirements"]
-            d["text_chars_used"] = match["text_chars_used"]
-            enriched.append(d)
+        raw_dicts = [r.to_dict() for r in all_results]
+
+        async def _score(d: dict) -> dict:
+            try:
+                match = await job_svc.compute_match_score(d, snapshot)
+                d["match_score"] = match["total"]
+                d["match_breakdown"] = match["breakdown"]
+                d["matched_skills"] = match["matched_skills"]
+                d["missing_requirements"] = match["missing_requirements"]
+                d["text_chars_used"] = match["text_chars_used"]
+            except Exception as exc:
+                logger.warning("Match scoring failed for %s: %s", d.get("title"), exc)
+                d["match_score"] = 0
+                d["match_breakdown"] = {}
+                d["matched_skills"] = []
+                d["missing_requirements"] = []
+                d["text_chars_used"] = 0
+            return d
+
+        enriched = list(await asyncio.gather(*[_score(d) for d in raw_dicts]))
 
         # Sort by initial score (best candidates for scraping)
         enriched.sort(key=lambda x: x["match_score"], reverse=True)
@@ -106,15 +120,21 @@ class JobDiscoveryService:
             new_scraped, len(to_scrape), _SCRAPE_TOP_N,
         )
 
-        # ── Trin 5: Genberegn match med fuld tekst ───────────────────────────
-        for job in enriched:
-            if job.get("full_description"):
-                match = job_svc.compute_match_score(job, snapshot)
+        # ── Trin 5: Genberegn match med fuld tekst (parallelt) ───────────────
+        async def _rescore(job: dict) -> None:
+            if not job.get("full_description"):
+                return
+            try:
+                match = await job_svc.compute_match_score(job, snapshot)
                 job["match_score"] = match["total"]
                 job["match_breakdown"] = match["breakdown"]
                 job["matched_skills"] = match["matched_skills"]
                 job["missing_requirements"] = match["missing_requirements"]
                 job["text_chars_used"] = match["text_chars_used"]
+            except Exception as exc:
+                logger.warning("Rescore failed for %s: %s", job.get("title"), exc)
+
+        await asyncio.gather(*[_rescore(j) for j in enriched])
 
         # Sorter igen efter opdaterede scores
         enriched.sort(key=lambda x: x["match_score"], reverse=True)
