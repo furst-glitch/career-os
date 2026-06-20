@@ -23,7 +23,7 @@ CareerOS/
 | Database | Supabase (PostgreSQL 15 + pgvector + Auth + Storage) |
 | AI | LiteLLM (OpenAI, Anthropic, Ollama) |
 | Betaling | Stripe |
-| CI/CD | GitHub Actions → Vercel (frontend) + Railway (backend) |
+| CI/CD | GitHub Actions → Vercel (frontend) + Render (backend) |
 
 ## Lokalt udviklingsmiljø
 
@@ -231,7 +231,7 @@ async def multi_agent_review(
 Se `docs/deployment.md` for detaljer.
 
 - **Frontend:** Vercel (auto-deploy fra `main`-branch)
-- **Backend:** Railway (Docker container)
+- **Backend:** Render (Python web service, `render.yaml` i roden, auto-deploy fra `main`)
 - **Database:** Supabase Cloud (EU/Frankfurt)
 
 ## Faseplan
