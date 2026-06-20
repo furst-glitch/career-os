@@ -86,22 +86,34 @@ class ApplicationService:
         pipeline = self.get_pipeline(user_id, pipeline_id)
         if not pipeline:
             return []
-        result = (
-            self.db.table("document_versions")
-            .select("id, title, document_type, content, version_number, language, generated_by, created_at")
+        # Hent pipeline_documents for at få document_role (cv / cover_letter)
+        pd_result = (
+            self.db.table("pipeline_documents")
+            .select("document_id, document_role")
             .eq("pipeline_id", pipeline_id)
-            .eq("user_id", user_id)
-            .order("version_number", desc=True)
             .execute()
         )
-        # Return only the latest version per document_type, wrapped in the structure the frontend expects
-        seen: set = set()
+        if not pd_result.data:
+            return []
+        # Hent den seneste version af hvert dokument
         docs = []
-        for doc in result.data or []:
-            dt = doc.get("document_type")
-            if dt not in seen:
-                seen.add(dt)
-                docs.append({"document_role": dt, "document_versions": doc})
+        seen: set = set()
+        for pd in pd_result.data:
+            role = pd.get("document_role")
+            doc_id = pd.get("document_id")
+            if role in seen or not doc_id:
+                continue
+            seen.add(role)
+            dv = (
+                self.db.table("document_versions")
+                .select("id, title, document_type, content, version_number, language, generated_by, created_at")
+                .eq("id", doc_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if dv.data:
+                docs.append({"document_role": role, "document_versions": dv.data[0]})
         return docs
 
     def add_document(self, user_id: str, pipeline_id: str, document_id: str, role: str) -> dict:
@@ -127,18 +139,20 @@ class ApplicationService:
         import hashlib
         mcv = self.db.table("master_cvs").select("id").eq("user_id", user_id).limit(1).execute()
         mcv_id = mcv.data[0]["id"] if mcv.data else None
+        doc_role = "cv" if doc_type == "cv" else "cover_letter"
+        # Map API doc_type ("cv"|"cover_letter") til gyldige database-enum-værdier
+        db_doc_type = "cv_version" if doc_type == "cv" else doc_type
 
         existing = (
             self.db.table("document_versions")
             .select("version_number")
             .eq("pipeline_id", pipeline_id)
-            .eq("document_type", doc_type)
+            .eq("document_type", db_doc_type)
             .order("version_number", desc=True)
             .limit(1)
             .execute()
         )
         next_version = (existing.data[0]["version_number"] + 1) if existing.data else 1
-        doc_role = "cv" if doc_type == "cv" else "cover_letter"
 
         doc = self.db.table("document_versions").insert({
             "user_id": user_id,
@@ -149,7 +163,7 @@ class ApplicationService:
             "content_hash": hashlib.sha256(content.encode()).hexdigest(),
             "language": language,
             "version_number": next_version,
-            "document_type": doc_type,
+            "document_type": db_doc_type,
             "generated_by": "ai",
         }).execute()
         doc_id = doc.data[0]["id"]
