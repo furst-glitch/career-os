@@ -77,8 +77,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 const API_BASE_JOBS = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
 
-function QuickGenModal({ job, onClose }: { job: Job; onClose: (refreshNeeded: boolean) => void }) {
-  const [docType, setDocType] = useState<"cover_letter" | "cv">("cover_letter");
+function QuickGenModal({ job, initialDocType = "cover_letter", onClose }: { job: Job; initialDocType?: "cover_letter" | "cv"; onClose: (refreshNeeded: boolean) => void }) {
+  const [docType, setDocType] = useState<"cover_letter" | "cv">(initialDocType);
   const [lang, setLang] = useState<"da" | "en">("da");
   const [style, setStyle] = useState("professional");
   const [loading, setLoading] = useState(false);
@@ -425,7 +425,7 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMa
   onToggleSave: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshMatch: (id: string) => void;
-  onQuickGen: (job: Job) => void;
+  onQuickGen: (job: Job, docType: "cv" | "cover_letter") => void;
   onMarkAnsoegt: (job: Job) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
@@ -492,13 +492,13 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMa
           Auto Apply ✦
         </Link>
         <button
-          onClick={() => onQuickGen(job)}
+          onClick={() => onQuickGen(job, "cv")}
           className="flex-1 rounded-lg border border-blue-200 bg-blue-50 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
         >
           Hurtig CV
         </button>
         <button
-          onClick={() => onQuickGen(job)}
+          onClick={() => onQuickGen(job, "cover_letter")}
           className="flex-1 rounded-lg border border-indigo-200 bg-indigo-50 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
         >
           Hurtig ansøgning
@@ -642,7 +642,7 @@ export default function JobsPage() {
   const [tab, setTab] = useState<FilterTab>("alle");
   const [view, setView] = useState<"list" | "kanban">("list");
   const [toast, setToast] = useState<string | null>(null);
-  const [quickGenJob, setQuickGenJob] = useState<Job | null>(null);
+  const [quickGenJob, setQuickGenJob] = useState<{ job: Job; docType: "cv" | "cover_letter" } | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -797,7 +797,7 @@ export default function JobsPage() {
               onToggleSave={handleToggleSave}
               onDelete={handleDelete}
               onRefreshMatch={handleRefreshMatch}
-              onQuickGen={j => setQuickGenJob(j)}
+              onQuickGen={(j, dt) => setQuickGenJob({ job: j, docType: dt })}
               onMarkAnsoegt={handleMarkAnsoegt}
             />
           ))}
@@ -806,7 +806,8 @@ export default function JobsPage() {
 
       {quickGenJob && (
         <QuickGenModal
-          job={quickGenJob}
+          job={quickGenJob.job}
+          initialDocType={quickGenJob.docType}
           onClose={(refreshNeeded) => {
             setQuickGenJob(null);
             if (refreshNeeded) loadJobs();
