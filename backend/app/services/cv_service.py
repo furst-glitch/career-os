@@ -85,14 +85,21 @@ class CVService:
         """Opbygger alle profiltabeller fra parsed CV. Returnerer session_id."""
         master_cv_id = await self._get_or_create_master_cv_id(user_id)
 
-        # Ryd eksisterende CV-data inden genimport — undgår duplikater ved genupload
-        self.db.table("cv_experiences").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_educations").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_skills").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_projects").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_certifications").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_systems").delete().eq("master_cv_id", master_cv_id).execute()
-        self.db.table("cv_leadership").delete().eq("master_cv_id", master_cv_id).execute()
+        # Ryd eksisterende CV-data inden genimport — kun hvis parse faktisk gav data
+        # (undgår at slette eksisterende data hvis AI returnerede tomt/fejlagtigt JSON)
+        has_parsed_content = bool(
+            parsed.get("experiences")
+            or parsed.get("educations")
+            or parsed.get("skills")
+        )
+        if has_parsed_content:
+            self.db.table("cv_experiences").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_educations").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_skills").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_projects").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_certifications").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_systems").delete().eq("master_cv_id", master_cv_id).execute()
+            self.db.table("cv_leadership").delete().eq("master_cv_id", master_cv_id).execute()
 
         # Erfaringer
         for exp in parsed.get("experiences") or []:
