@@ -164,6 +164,23 @@ class CVAgent(BaseAgent):
         candidate_summary = input_data.get("candidate_summary", "")
         req_text = "\n".join(f"- {r}" for r in requirements[:15]) if requirements else "Ikke angivet"
 
+        # Fetch full snapshot to pre-build education + skills blocks
+        # This guarantees both sections are ALWAYS present in the prompt
+        # regardless of whether the LLM chooses to include them.
+        try:
+            from app.services.memory_snapshot_service import MemorySnapshotService
+            snapshot = MemorySnapshotService(self.supabase).snapshot(self.user_id)
+        except Exception:
+            snapshot = {}
+
+        job_dict = {
+            "title": job_title,
+            "description": job_description,
+            "requirements": requirements,
+        }
+        education_block  = await self._build_education_section("", snapshot)
+        skills_block     = await self._build_skills_section("", snapshot, job_dict)
+
         if language == "da":
             system = (
                 f"Du er en ekspert CV-skribent. Skriv et stærkt, jobspecifikt CV til stillingen "
@@ -277,6 +294,24 @@ class CVAgent(BaseAgent):
                 "6. INGEN DUBLETTER: Kompetencer og systemer må ikke gentages ordret i erfaringsbullets.\n"
                 "7. KONTAKT ÉN GANG: Navn og kontaktinfo vises kun i headeren — ingen KONTAKT-sektion i teksten.\n"
                 "8. LINKEDIN-URL: Vis altid renset URL uden https://www. præfiks.\n\n"
+                "PRE-PROCESSERET DATA — OBLIGATORISK BRUG:\n"
+                "Brugerens besked indeholder en blok markeret '=== PRE-PROCESSERET DATA ==='. "
+                "Denne blok indeholder UDDANNELSE og KOMPETENCER/SYSTEMER hentet direkte fra databasen. "
+                "Du SKAL bruge disse data som grundlag for de respektive sektioner.\n"
+                "UDDANNELSE-REGEL (ikke-forhandlingsbar):\n"
+                "- Sektionen ## Uddannelse SKAL ALTID være til stede i output.\n"
+                "- Kopiér indholdet fra UDDANNELSE-blokken i pre-processeret data.\n"
+                "- Skriv ALDRIG 'ikke angivet', 'ukendt' eller spring sektionen over.\n"
+                "- Hvis pre-processeret data viser 'Uddannelsesoplysninger ikke registreret': "
+                "  skriv dette — men ALDRIG en tom sektion.\n"
+                "KOMPETENCER-REGEL (ikke-forhandlingsbar):\n"
+                "- Sektionen ## Kompetencer SKAL ALTID indeholde minimum 8 punkter.\n"
+                "- Brug KOMPETENCER-listen fra pre-processeret data som udgangspunkt.\n"
+                "- Rank jobspecifikke kompetencer øverst.\n"
+                "- Tilføj aldrig færre end 8 punkter — suppler med afledte kompetencer fra erfaringstitler.\n"
+                "SYSTEMER-REGEL (ikke-forhandlingsbar):\n"
+                "- Sektionen ## Systemer SKAL ALTID indeholde mindst de systemer fra SYSTEMER-listen.\n"
+                "- Tilføj gerne systemer der fremgår af erfaringsbullets, men behold dem fra listen.\n\n"
                 "REGLER:\n"
                 "- Brug KUN de eksakte datoer fra kandidatprofilen. Opfind ALDRIG datoer.\n"
                 "- Nuværende arbejdsgiver: startår SKAL komme fra profilen — tjek snapshot.\n"
@@ -293,7 +328,11 @@ class CVAgent(BaseAgent):
             )
             user_msg = (
                 f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
-                f"Kandidatprofil (brug KUN disse datoer og fakta — opfind intet):\n{candidate_summary}"
+                f"Kandidatprofil (brug KUN disse datoer og fakta — opfind intet):\n{candidate_summary}\n\n"
+                f"=== PRE-PROCESSERET DATA (BRUG DISSE DIREKTE — INGEN OMSKRIVNING) ===\n"
+                f"{education_block}\n\n"
+                f"{skills_block}\n"
+                f"=== SLUT PRE-PROCESSERET DATA ==="
             )
         else:
             system = (
@@ -408,6 +447,24 @@ class CVAgent(BaseAgent):
                 "6. NO DUPLICATES: Skills and systems must not be repeated verbatim in experience bullets.\n"
                 "7. CONTACT ONCE: Name and contact appear in the header only — no Contact section in body text.\n"
                 "8. LINKEDIN URL: Always display cleaned URL without https://www. prefix.\n\n"
+                "PRE-PROCESSED DATA — MANDATORY USE:\n"
+                "The user message contains a block marked '=== PRE-PROCESSED DATA ==='. "
+                "This block contains EDUCATION and SKILLS/SYSTEMS pulled directly from the database. "
+                "You MUST use this data as the basis for the respective sections.\n"
+                "EDUCATION RULE (non-negotiable):\n"
+                "- The ## Education section MUST ALWAYS be present in output.\n"
+                "- Copy content from the EDUCATION block in the pre-processed data.\n"
+                "- NEVER write 'not provided', 'unknown' or skip this section.\n"
+                "- If pre-processed data shows 'Uddannelsesoplysninger ikke registreret': "
+                "  write 'Education not registered' — but NEVER an empty section.\n"
+                "SKILLS RULE (non-negotiable):\n"
+                "- The ## Skills section MUST ALWAYS contain minimum 8 items.\n"
+                "- Use the SKILLS list from pre-processed data as your starting point.\n"
+                "- Rank job-relevant skills first.\n"
+                "- Never output fewer than 8 items — supplement with skills inferred from job titles.\n"
+                "SYSTEMS RULE (non-negotiable):\n"
+                "- The ## Systems section MUST include at minimum the systems from the SYSTEMS list.\n"
+                "- Add systems from experience bullets if relevant, but preserve the listed ones.\n\n"
                 "RULES:\n"
                 "- Use ONLY the exact dates from the candidate profile. NEVER invent dates.\n"
                 "- Current employer start year MUST come from profile — check snapshot.\n"
@@ -422,7 +479,11 @@ class CVAgent(BaseAgent):
             )
             user_msg = (
                 f"Requirements:\n{req_text}\n\nJob Description:\n{job_description}\n\n"
-                f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}"
+                f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}\n\n"
+                f"=== PRE-PROCESSED DATA (USE THESE DIRECTLY — NO REWRITING) ===\n"
+                f"{education_block}\n\n"
+                f"{skills_block}\n"
+                f"=== END PRE-PROCESSED DATA ==="
             )
 
         llm = LiteLLMProvider(self.user_id)
@@ -596,34 +657,65 @@ class CVAgent(BaseAgent):
         return result
 
     async def _build_education_section(self, cv_text: str, snapshot: dict) -> str:
-        """Build education string from snapshot (priority) or cv_text fallback."""
-        edu = snapshot.get("education") or []
-        if edu:
-            parts = []
-            for e in edu:
-                degree = e.get("degree") or ""
-                institution = e.get("institution") or ""
-                start = (e.get("period_start") or "")[:4]
-                end = (e.get("period_end") or "")[:4]
-                period = f"{start}-{end}" if start and end else (start or end or "")
-                entry = f"{degree} - {institution}" if degree and institution else (degree or institution)
-                if period:
-                    entry += f" | {period}"
-                if entry.strip(" -|"):
-                    parts.append(entry)
-            if parts:
-                return "UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in parts)
+        """
+        Build education string from all available sources.
+        ALWAYS returns a non-empty string with at least a placeholder.
+        Priority: snapshot.education → cv_text regex → certifications → leadership.
+        """
+        parts: list[str] = []
 
-        edu_match = re.search(
-            r"(?:uddannelse|education|bachelor|master|kandidat|diplom|cand\.|hd |hd\.|mba|ph\.?d)"
-            r"[^\n]*(?:\n[ \t]*[^\n#\-]{10,100}){0,3}",
-            cv_text,
-            re.IGNORECASE,
-        )
-        if edu_match:
-            return f"UDDANNELSE (fra CV-tekst):\n  {edu_match.group(0)[:250].strip()}"
+        # Source 1: snapshot.education (from cv_educations table — highest priority)
+        for e in (snapshot.get("education") or []):
+            degree = (e.get("degree") or "").strip()
+            institution = (e.get("institution") or "").strip()
+            start = (e.get("period_start") or "")[:4]
+            end = (e.get("period_end") or "")[:4]
+            period = f"{start}-{end}" if start and end else (start or end or "")
+            entry = f"{degree} – {institution}" if degree and institution else (degree or institution)
+            if period:
+                entry += f" | {period}"
+            if entry.strip(" –|"):
+                parts.append(entry)
 
-        return "UDDANNELSE: [Ikke oplyst]"
+        # Source 2: regex extract from raw cv_text if snapshot empty
+        if not parts and cv_text:
+            edu_match = re.search(
+                r"(?:uddannelse|education|bachelor|master|kandidat|diplom|cand\.|hd |hd\.|mba|ph\.?d)"
+                r"[^\n]*(?:\n[ \t]*[^\n#\-]{10,100}){0,3}",
+                cv_text, re.IGNORECASE,
+            )
+            if edu_match:
+                parts.append(f"(fra CV): {edu_match.group(0)[:200].strip()}")
+
+        # Source 3: certifications (AMU, lederuddannelse, licenser) always shown under education
+        for c in (snapshot.get("certifications") or []):
+            name = (c.get("name") or "").strip()
+            issuer = (c.get("issuer") or "").strip()
+            year = (c.get("issued_at") or "")[:4]
+            if not name:
+                continue
+            entry = name
+            if issuer:
+                entry += f" – {issuer}"
+            if year:
+                entry += f" | {year}"
+            parts.append(entry)
+
+        # Source 4: leadership roles with formal titles
+        for l in (snapshot.get("leadership") or []):
+            title = (l.get("title") or "").strip()
+            start = (l.get("period_start") or "")[:4]
+            end = (l.get("period_end") or "")[:4]
+            period = f"{start}-{end}" if start and end else ""
+            if not title:
+                continue
+            entry = title + (f" | {period}" if period else "")
+            parts.append(entry)
+
+        if not parts:
+            return "UDDANNELSE:\n  - Uddannelsesoplysninger ikke registreret"
+
+        return "UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in parts)
 
     def _infer_skills_from_experience(self, recent_jobs: list) -> list[str]:
         """Infer generic skills from job titles and descriptions."""
@@ -657,27 +749,96 @@ class CVAgent(BaseAgent):
 
         return sorted(skills, key=score, reverse=True)
 
+    _SYSTEM_KW = {
+        "sap", "servicenow", "excel", "power bi", "sharepoint", "erp", "crm",
+        "jira", "oracle", "dynamics", "workday", "fm butler", "cmms", "python",
+        "sql", "powerpoint", "power query", "microsoft", "m365", "google",
+    }
+
     async def _build_skills_section(self, cv_text: str, snapshot: dict, job: dict) -> str:
-        """Build ranked skills list from snapshot + inferred from experience."""
-        skills: list[str] = [
+        """
+        Build ranked skills + systems from snapshot.
+        snapshot.skills is a list of {name, level, category} objects.
+        snapshot.systems is a list of {name, category, proficiency} objects.
+        ALWAYS returns at minimum 8 competencies.
+        """
+        # Source 1: confirmed skills from cv_skills table
+        skills_raw: list[str] = [
             s.get("name", "").strip()
             for s in (snapshot.get("skills") or [])
+            if s.get("name") and s.get("category") not in ("language",)
+        ]
+
+        # Source 2: systems from cv_systems table (separate bucket)
+        systems_raw: list[str] = [
+            s.get("name", "").strip()
+            for s in (snapshot.get("systems") or [])
             if s.get("name")
         ]
-        inferred = self._infer_skills_from_experience(snapshot.get("experience") or [])
-        seen_lower = {s.lower() for s in skills}
-        for s in inferred:
-            if s.lower() not in seen_lower:
-                skills.append(s)
-                seen_lower.add(s.lower())
+        # Also pull systems from skills table (category=technical)
+        for s in (snapshot.get("skills") or []):
+            if s.get("category") == "technical" and s.get("name"):
+                nm = s["name"].strip()
+                if nm not in systems_raw:
+                    systems_raw.append(nm)
 
+        # Source 3: infer from experience titles
+        inferred = self._infer_skills_from_experience(snapshot.get("experience") or [])
+
+        # Merge: competencies first, then inferred as fallback
+        seen_lower: set[str] = set()
+        competencies: list[str] = []
+        systems: list[str] = []
+
+        for s in skills_raw:
+            sl = s.lower()
+            if sl not in seen_lower:
+                seen_lower.add(sl)
+                # Route: system keywords go to systems bucket
+                if any(kw in sl for kw in self._SYSTEM_KW):
+                    systems.append(s)
+                else:
+                    competencies.append(s)
+
+        for s in systems_raw:
+            sl = s.lower()
+            if sl not in seen_lower:
+                seen_lower.add(sl)
+                systems.append(s)
+
+        for s in inferred:
+            sl = s.lower()
+            if sl not in seen_lower:
+                seen_lower.add(sl)
+                competencies.append(s)
+
+        # Rank by job relevance
         job_text = " ".join([
             job.get("title", ""),
             job.get("description", ""),
             " ".join(job.get("requirements", [])),
         ])
         job_keywords = re.findall(r"\b\w{4,}\b", job_text.lower())
-        ranked = self._rank_skills_by_relevance(skills, job_keywords)
-        if not ranked:
-            return ""
-        return "KOMPETENCER: " + ", ".join(ranked[:15])
+        competencies = self._rank_skills_by_relevance(competencies, job_keywords)
+        systems      = self._rank_skills_by_relevance(systems, job_keywords)
+
+        # Fallback: ensure minimum 8 competencies
+        if len(competencies) < 8:
+            fallback_da = [
+                "Procesoptimering", "Stakeholder Management", "Projektkoordinering",
+                "Rapportering", "Dataanalyse", "Advanced Excel",
+                "Tværorganisatorisk samarbejde", "Struktureret arbejdsmetode",
+            ]
+            for fb in fallback_da:
+                if len(competencies) >= 8:
+                    break
+                if fb.lower() not in seen_lower:
+                    competencies.append(fb)
+                    seen_lower.add(fb.lower())
+
+        lines: list[str] = []
+        if competencies:
+            lines.append("KOMPETENCER: " + ", ".join(competencies[:15]))
+        if systems:
+            lines.append("SYSTEMER: " + ", ".join(systems[:10]))
+        return "\n".join(lines) if lines else "KOMPETENCER: Kompetencer opdateres løbende"

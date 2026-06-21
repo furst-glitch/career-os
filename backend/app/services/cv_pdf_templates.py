@@ -81,13 +81,20 @@ def parse_cv_text(text: str) -> list[dict]:
 
 
 _LEFT_KW = {
-    # Danish
-    "KOMPETENCER", "UDDANNELSE", "CERTIFIKAT", "CERTIF",
-    "SPROG", "REFERENCER", "REFERENCE", "KURSER",
+    # Danish — Master CV 2.0
+    "KOMPETENCER", "KERNEKOMPETENCER",
+    "SYSTEMER",
+    "UDDANNELSE",
+    "CERTIFIKAT", "CERTIF",
+    "SPROG",
+    "REFERENCER", "REFERENCE", "KURSER",
     "FAGLIGE", "TEKNISKE", "NØGLE",
-    # English
-    "SKILLS", "EDUCATION", "LANGUAGE", "COURSE",
-    "CERTIFICATION", "REFERENCE", "QUALIF",
+    # English — Master CV 2.0
+    "SKILLS", "COMPETENC",
+    "SYSTEMS",
+    "EDUCATION",
+    "LANGUAGE",
+    "COURSE", "CERTIFICATION", "REFERENCE", "QUALIF",
 }
 
 
