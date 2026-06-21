@@ -269,6 +269,14 @@ class CVService:
         if not master.data:
             return {}
         master_cv_id = master.data[0]["id"]
+        master_cv_data = master.data[0]
+
+        # Beriget master_cv med kontaktdata fra user_profiles til score-beregning
+        user_profile = self.db.table("user_profiles").select(
+            "full_name, display_name, email, phone, location, linkedin_url, city"
+        ).eq("user_id", user_id).limit(1).execute()
+        if user_profile.data:
+            master_cv_data = {**master_cv_data, **user_profile.data[0]}
 
         experiences = self.db.table("cv_experiences").select("*").eq("master_cv_id", master_cv_id).order("period_start", desc=True).execute()
         educations  = self.db.table("cv_educations").select("*").eq("master_cv_id", master_cv_id).order("period_end", desc=True).execute()
@@ -281,7 +289,7 @@ class CVService:
         gaps        = self.db.table("profile_gaps").select("*").eq("user_id", user_id).eq("is_resolved", False).order("priority").execute()
 
         return {
-            "master_cv": master.data[0],
+            "master_cv": master_cv_data,
             "experiences": experiences.data,
             "educations": educations.data,
             "skills": skills.data,

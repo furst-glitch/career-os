@@ -24,12 +24,14 @@ from typing import Any
 
 SECTION_WEIGHTS: dict[str, float] = {
     "experiences":    0.20,
-    "achievements":   0.20,
+    "achievements":   0.15,
     "skills":         0.15,
-    "projects":       0.15,
-    "systems":        0.15,
+    "systems":        0.10,
+    "education":      0.10,
     "leadership":     0.10,
+    "contact":        0.10,
     "certifications": 0.05,
+    "projects":       0.05,
 }
 
 MISSING_THRESHOLD = 35  # Score under dette → "missing area"
@@ -39,7 +41,9 @@ MISSING_LABELS: dict[str, str] = {
     "achievements":   "Kvantificerede præstationer",
     "projects":       "Projekter",
     "systems":        "Systemer og teknologier",
+    "education":      "Uddannelse",
     "leadership":     "Lederskabserfaring",
+    "contact":        "Kontaktoplysninger (navn, email, telefon)",
     "certifications": "Certifikater",
     "skills":         "Kompetencer",
 }
@@ -49,7 +53,9 @@ SECTION_LABELS: dict[str, str] = {
     "achievements":   "Præstationer",
     "projects":       "Projekter",
     "systems":        "Systemer",
+    "education":      "Uddannelse",
     "leadership":     "Lederskab",
+    "contact":        "Kontakt",
     "certifications": "Certifikater",
     "skills":         "Kompetencer",
 }
@@ -61,12 +67,15 @@ class ProfileCompletenessService:
 
     def calculate(self, profile: dict[str, Any]) -> dict[str, Any]:
         """Beregn scores fra en fuld profil-dict. Kræver ingen DB-kald."""
+        master_cv = profile.get("master_cv") or {}
         section_scores = {
             "experiences":    self._score_experiences(profile.get("experiences") or []),
             "achievements":   self._score_achievements(profile.get("achievements") or []),
             "projects":       self._score_projects(profile.get("projects") or []),
             "systems":        self._score_systems(profile.get("systems") or []),
+            "education":      self._score_education(profile.get("educations") or []),
             "leadership":     self._score_leadership(profile.get("leadership") or []),
+            "contact":        self._score_contact(master_cv),
             "certifications": self._score_certifications(profile.get("certifications") or []),
             "skills":         self._score_skills(profile.get("skills") or []),
         }
@@ -100,7 +109,9 @@ class ProfileCompletenessService:
             "achievements":   result["sections"]["achievements"],
             "projects":       result["sections"]["projects"],
             "systems":        result["sections"]["systems"],
+            "education":      result["sections"]["education"],
             "leadership":     result["sections"]["leadership"],
+            "contact":        result["sections"]["contact"],
             "certifications": result["sections"]["certifications"],
             "skills":         result["sections"]["skills"],
             "overall":        result["overall"],
@@ -114,6 +125,32 @@ class ProfileCompletenessService:
         """Hent senest beregnede score fra DB. Returnerer None hvis ingen."""
         result = supabase.table("profile_scores").select("*").eq("user_id", user_id).execute()
         return result.data[0] if result.data else None
+
+    def _score_education(self, items: list[dict]) -> int:
+        if not items:
+            return 0
+        score = 40 if len(items) >= 1 else 0
+        score += 20 if len(items) >= 2 else 0
+        score += 10 if len(items) >= 3 else 0
+        has_degree = any(e.get("degree") and len(e.get("degree", "")) > 3 for e in items)
+        has_institution = any(e.get("institution") for e in items)
+        score += 20 if has_degree else 0
+        score += 10 if has_institution else 0
+        return min(100, score)
+
+    def _score_contact(self, master_cv: dict) -> int:
+        score = 0
+        if master_cv.get("full_name") or master_cv.get("display_name"):
+            score += 30
+        if master_cv.get("email"):
+            score += 25
+        if master_cv.get("phone"):
+            score += 20
+        if master_cv.get("location") or master_cv.get("city"):
+            score += 15
+        if master_cv.get("linkedin_url"):
+            score += 10
+        return min(100, score)
 
     # ─── Sektions-scorers ──────────────────────────────────────────────────────
 

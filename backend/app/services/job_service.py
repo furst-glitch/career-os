@@ -79,13 +79,25 @@ DEALBREAKER_SIGNALS: dict[str, dict] = {
         "severity": "hard",
     },
     "big4_audit": {
+        # Hård blokering kun ved eksplicitte certificeringskrav
+        # "big four"/"big 4" er hyppigt en præference ("gerne fra Big Four"),
+        # ikke et absolut krav — håndteres af big4_preferred nedenfor
         "job_signals": [
-            "big 4", "big four", "fra revisionsvirksomhed",
-            "revisoruddannelse", "statsautoriseret revisor",
+            "statsautoriseret revisor",
+            "revisoruddannelse",
             "acca", "chartered accountant",
         ],
         "candidate_check": "big4_experience",
         "severity": "hard",
+    },
+    "big4_preferred": {
+        # Blød straf når Big Four nævnes som præference
+        "job_signals": [
+            "big 4", "big four", "fra revisionsvirksomhed",
+        ],
+        "candidate_check": "big4_experience",
+        "severity": "soft",
+        "score_penalty": 8,
     },
     "temp_position": {
         "job_signals": [
@@ -174,6 +186,7 @@ class JobService:
             "responsibilities":    data.get("responsibilities"),
             "company_description": data.get("company_description"),
             "scraped_at":          data.get("scraped_at"),
+            "ats_url":             data.get("ats_url"),
         }
         result = self.db.table("jobs").insert(payload).execute()
         return result.data[0]
@@ -241,6 +254,7 @@ class JobService:
             "requirements", "salary_min", "salary_max", "job_type",
             "remote_type", "notes", "is_saved",
             "full_description", "responsibilities", "company_description", "scraped_at",
+            "ats_url",
         }
         payload = {k: v for k, v in data.items() if k in allowed}
         result = (
@@ -291,20 +305,51 @@ class JobService:
     ) -> tuple[float, list[str]]:
         profile      = snapshot.get("profile", {}) or {}
         target_title = (profile.get("target_title") or "").lower()
-        skill_names  = [
-            s.get("name", "").lower()
-            for s in (snapshot.get("skills") or [])
-            if s.get("name")
-        ]
-        extended = list(dict.fromkeys(
-            skill_names + [w for w in target_title.split() if len(w) > 3]
-        ))
-        matched = [s for s in extended if _match_term(s, job_text, job_tokens)]
+
+        # Level-vægter: expert/advanced tæller mere end begynder
+        _LEVEL_WEIGHT = {"expert": 1.5, "advanced": 1.3, "intermediate": 1.0, "beginner": 0.7}
+        skills_list = snapshot.get("skills") or []
+
+        weighted_total   = 0.0
+        weighted_matched = 0.0
+        matched_names: list[str] = []
+
+        for s in skills_list:
+            name = (s.get("name") or "").lower()
+            if not name:
+                continue
+            w = _LEVEL_WEIGHT.get((s.get("level") or "intermediate").lower(), 1.0)
+            weighted_total += w
+            if _match_term(name, job_text, job_tokens):
+                weighted_matched += w
+                matched_names.append(name)
+
+        # Systems tæller som tekniske kompetencer (lavere vægt)
+        _SYS_WEIGHT = {"expert": 1.2, "advanced": 1.1, "intermediate": 0.9, "beginner": 0.6}
+        for sys in (snapshot.get("systems") or []):
+            name = (sys.get("name") or "").lower()
+            if not name:
+                continue
+            w = _SYS_WEIGHT.get((sys.get("proficiency") or "intermediate").lower(), 0.9) * 0.8
+            weighted_total += w
+            if _match_term(name, job_text, job_tokens):
+                weighted_matched += w
+                if name not in matched_names:
+                    matched_names.append(name)
+
+        # Tilføj target_title-ord som unvægtede signaler
+        title_words = list(dict.fromkeys(w for w in target_title.split() if len(w) > 3))
+        for w in title_words:
+            weighted_total += 1.0
+            if _match_term(w, job_text, job_tokens) and w not in matched_names:
+                weighted_matched += 1.0
+                matched_names.append(w)
+
         score = (
-            min(100.0, len(matched) / len(extended) * 100 * 1.5)
-            if extended else 0.0
+            min(100.0, weighted_matched / weighted_total * 100 * 1.5)
+            if weighted_total > 0 else 0.0
         )
-        return score, matched
+        return score, matched_names
 
     def _score_experience(
         self, job_text: str, job_tokens: set[str], snapshot: dict
@@ -325,6 +370,25 @@ class JobService:
             for w in _tokenise(desc):
                 if len(w) > 5:
                     exp_desc_tokens.add(w)
+            # Technologies: inkluder korte termer (SQL, AI, ERP, Excel) som fuld token
+            for tech in (exp.get("technologies") or []):
+                tech_l = tech.lower().strip()
+                if len(tech_l) >= 2:
+                    exp_desc_tokens.add(tech_l)
+                for w in _tokenise(tech_l):
+                    if len(w) >= 3:
+                        exp_desc_tokens.add(w)
+
+        # Projekters teknologier og outcomes tæller med i erfaringsscoren
+        for proj in (snapshot.get("projects") or [])[:5]:
+            for tech in (proj.get("technologies") or []):
+                tech_l = tech.lower().strip()
+                if len(tech_l) >= 2:
+                    exp_desc_tokens.add(tech_l)
+            for w in _tokenise((proj.get("outcomes") or "") + " " + (proj.get("role") or "")):
+                if len(w) > 5:
+                    exp_desc_tokens.add(w)
+
         exp_desc_hits  = sum(1 for t in exp_desc_tokens if _match_term(t, job_text, job_tokens))
         exp_desc_score = min(100.0, exp_desc_hits * 2.5)
 
@@ -375,7 +439,10 @@ class JobService:
         prefs   = snapshot.get("preferences", {}) or {}
 
         has_data = {
-            "skills": len(snapshot.get("skills") or []) >= 3,
+            "skills": (
+                len(snapshot.get("skills") or []) >= 3
+                or len(snapshot.get("systems") or []) >= 2
+            ),
             "experience": len(snapshot.get("experience") or []) >= 1,
             "profile": bool(
                 profile.get("summary")
@@ -453,19 +520,26 @@ class JobService:
     def _candidate_satisfies(self, check_type: str, snapshot: dict) -> bool:
         profile    = snapshot.get("profile", {}) or {}
         experience = snapshot.get("experience", []) or []
+        education  = snapshot.get("education", []) or []
         skills     = snapshot.get("skills", []) or []
         prefs      = snapshot.get("preferences", {}) or {}
 
         summary = (profile.get("summary") or "").lower()
+        # Inkluder uddannelsesdata så academic_degree-tjek virker korrekt
+        edu_text = " ".join(filter(None, [
+            " ".join((e.get("degree") or "") for e in education),
+            " ".join((e.get("description") or "")[:100] for e in education),
+        ])).lower()
         profile_text = " ".join(filter(None, [
             summary,
+            edu_text,
             " ".join(e.get("title", "") for e in experience[:5]),
             " ".join((e.get("description") or "")[:200] for e in experience[:3]),
         ])).lower()
         skills_text = " ".join(s.get("name", "") for s in skills).lower()
 
         # If no profile data exists, do not flag as dealbreaker (avoid false positives)
-        has_data = bool(summary or experience)
+        has_data = bool(summary or experience or education)
 
         checks: dict[str, bool] = {
             "education_level": (
@@ -547,7 +621,8 @@ class JobService:
             "eu_procurement":    "Kræver EU-udbudserfaring",
             "gmp_pharma":        "Kræver GMP/pharma-erfaring",
             "aviation":          "Kræver luftfartscertificering",
-            "big4_audit":        "Kræver Big 4 revisionsbaggrund",
+            "big4_audit":        "Kræver statsaut. revisor/ACCA-baggrund",
+            "big4_preferred":    "Præference for Big 4 erfaring",
             "temp_position":     "Tidsbegrænset stilling",
             "salary_mismatch":   "Løn under kandidatens mål",
         }
@@ -708,11 +783,30 @@ class JobService:
             for s in (snapshot.get("skills") or [])
             if s.get("name")
         ]
+        system_names = [
+            s.get("name", "").lower()
+            for s in (snapshot.get("systems") or [])
+            if s.get("name")
+        ]
+        achievement_text = " ".join(
+            (a.get("title", "") + " " + (a.get("metric") or ""))
+            for a in (snapshot.get("achievements") or [])[:10]
+        )
+        ldr_text = " ".join(
+            (l.get("title", "") + " " + (l.get("scope") or ""))
+            for l in (snapshot.get("leadership") or [])[:4]
+        )
+        proj_data = snapshot.get("projects") or []
         candidate_text = " ".join(filter(None, [
             target_title, summary,
             *skill_names,
+            *system_names,
+            achievement_text, ldr_text,
             *[e.get("title", "") for e in exp_data[:6]],
             *[(e.get("description") or "")[:300] for e in exp_data[:4]],
+            *[t for e in exp_data[:5] for t in (e.get("technologies") or [])],
+            *[p.get("name", "") for p in proj_data[:5]],
+            *[t for p in proj_data[:5] for t in (p.get("technologies") or [])],
         ])).lower()
         candidate_tokens = set(_tokenise(candidate_text))
 

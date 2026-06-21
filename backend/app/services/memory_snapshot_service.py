@@ -76,31 +76,40 @@ class MemorySnapshotService:
         # L3: full DB fetch
         mcv_id = self._mcv_id(user_id)
 
-        profile     = self._profile(user_id, mcv_id)
-        experience  = self._experience(mcv_id)
-        education   = self._education(mcv_id)
-        skills      = self._skills(mcv_id)
-        certs       = self._certs(mcv_id)
-        projects    = self._projects(mcv_id)
-        goals       = [g for g in self.mem.list_goals(user_id) if g.get("status") == "active"]
-        milestones  = self.mem.list_milestones(user_id)[:5]
-        preferences = self.mem.get_preferences(user_id)
-        memories    = self.mem.list_memories(user_id, limit=15)
+        profile      = self._profile(user_id, mcv_id)
+        experience   = self._experience(mcv_id)
+        education    = self._education(mcv_id)
+        skills       = self._skills(mcv_id)
+        systems      = self._systems(mcv_id)
+        leadership   = self._leadership(mcv_id)
+        achievements = self._achievements(mcv_id)
+        certs        = self._certs(mcv_id)
+        projects     = self._projects(mcv_id)
+        goals        = [g for g in self.mem.list_goals(user_id) if g.get("status") == "active"]
+        milestones   = self.mem.list_milestones(user_id)[:5]
+        preferences  = self.mem.get_preferences(user_id)
+        memories     = self.mem.list_memories(user_id, limit=15)
 
         result = {
-            "generated_at": datetime.now(UTC).isoformat(),
-            "user_id":      user_id,
-            "profile":      profile,
-            "experience":   experience,
-            "education":    education,
-            "skills":       skills,
-            "certifications": certs,
-            "projects":     projects,
-            "goals":        goals,
-            "milestones":   milestones,
-            "preferences":  preferences,
+            "generated_at":    datetime.now(UTC).isoformat(),
+            "user_id":         user_id,
+            "profile":         profile,
+            "experience":      experience,
+            "education":       education,
+            "skills":          skills,
+            "systems":         systems,
+            "leadership":      leadership,
+            "achievements":    achievements,
+            "certifications":  certs,
+            "projects":        projects,
+            "goals":           goals,
+            "milestones":      milestones,
+            "preferences":     preferences,
             "recent_memories": memories,
-            "text_summary": self._text_summary(profile, experience, education, skills, goals, preferences, milestones),
+            "text_summary":    self._text_summary(
+                profile, experience, education, skills, systems,
+                leadership, achievements, certs, goals, preferences, milestones,
+            ),
         }
 
         # Populate L2 (Redis) then L1
@@ -213,18 +222,63 @@ class MemorySnapshotService:
         )
         return rows or []
 
+    def _systems(self, mcv_id: str | None) -> list[dict]:
+        if not mcv_id:
+            return []
+        rows = (
+            self.db.table("cv_systems")
+            .select("name, category, proficiency")
+            .eq("master_cv_id", mcv_id)
+            .order("sort_order")
+            .execute()
+            .data
+        )
+        return rows or []
+
+    def _leadership(self, mcv_id: str | None) -> list[dict]:
+        if not mcv_id:
+            return []
+        rows = (
+            self.db.table("cv_leadership")
+            .select("title, scope, direct_reports, period_start, period_end, responsibilities")
+            .eq("master_cv_id", mcv_id)
+            .order("sort_order")
+            .execute()
+            .data
+        )
+        return rows or []
+
+    def _achievements(self, mcv_id: str | None) -> list[dict]:
+        if not mcv_id:
+            return []
+        rows = (
+            self.db.table("cv_achievements")
+            .select("title, description, metric, impact_level, year")
+            .eq("master_cv_id", mcv_id)
+            .order("impact_level", desc=True)
+            .limit(20)
+            .execute()
+            .data
+        )
+        return rows or []
+
     def _text_summary(
         self,
         profile: dict,
         experience: list,
         education: list,
         skills: list,
+        systems: list,
+        leadership: list,
+        achievements: list,
+        certs: list,
         goals: list,
         prefs: dict,
         milestones: list,
     ) -> str:
         lines: list[str] = []
 
+        # ── Kontaktprofil ────────────────────────────────────────────────────
         if profile.get("full_name"):
             lines.append(f"NAVN: {profile['full_name']}")
         if profile.get("email"):
@@ -247,6 +301,7 @@ class MemorySnapshotService:
         if profile.get("summary"):
             lines.append(f"SAMMENFATNING: {profile['summary']}")
 
+        # ── Erfaring ─────────────────────────────────────────────────────────
         if experience:
             exp_parts = []
             for i, e in enumerate(experience):
@@ -255,7 +310,6 @@ class MemorySnapshotService:
                 period = f"{start}–{end}" if start else ("nu" if e.get("is_current") else "")
                 entry = f"{e['title']} @ {e['company']} [{period}]"
                 if i < 5:
-                    # Recent positions: include description/achievements
                     desc = e.get("description") or ""
                     achiev = "; ".join((e.get("achievements") or [])[:2])
                     detail = (achiev or desc)[:120]
@@ -264,9 +318,10 @@ class MemorySnapshotService:
                 exp_parts.append(entry)
             lines.append("ERFARING:\n" + "\n".join(f"  - {p}" for p in exp_parts))
 
+        # ── Uddannelse ───────────────────────────────────────────────────────
         if education:
             edu_parts = []
-            for e in education[:3]:
+            for e in education:
                 degree = e.get("degree") or ""
                 institution = e.get("institution") or ""
                 start = (e.get("period_start") or "")[:4]
@@ -280,10 +335,55 @@ class MemorySnapshotService:
             if edu_parts:
                 lines.append("UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in edu_parts))
 
+        # ── Kompetencer ──────────────────────────────────────────────────────
         if skills:
-            skill_names = ", ".join(s["name"] for s in skills[:12])
-            lines.append(f"KOMPETENCER: {skill_names}")
+            domain = [s["name"] for s in skills if s.get("category") not in ("language", "technical")]
+            tech   = [s["name"] for s in skills if s.get("category") == "technical"]
+            langs  = [s["name"] for s in skills if s.get("category") == "language"]
+            if domain:
+                lines.append("KOMPETENCER: " + ", ".join(domain))
+            if tech:
+                lines.append("TEKNISKE FÆRDIGHEDER: " + ", ".join(tech))
+            if langs:
+                lines.append("SPROG: " + ", ".join(langs))
 
+        # ── Systemer ─────────────────────────────────────────────────────────
+        if systems:
+            sys_names = ", ".join(s["name"] for s in systems)
+            lines.append(f"SYSTEMER: {sys_names}")
+
+        # ── Lederskab ────────────────────────────────────────────────────────
+        if leadership:
+            ldr_parts = []
+            for l in leadership:
+                start = (l.get("period_start") or "")[:4]
+                end = (l.get("period_end") or "")[:4]
+                period = f"{start}-{end}" if start and end else (start or end or "")
+                entry = f"{l['title']}" + (f" [{period}]" if period else "")
+                if l.get("scope"):
+                    entry += f": {l['scope'][:100]}"
+                ldr_parts.append(entry)
+            lines.append("LEDERSKAB:\n" + "\n".join(f"  - {p}" for p in ldr_parts))
+
+        # ── Præstationer ─────────────────────────────────────────────────────
+        if achievements:
+            ach_parts = []
+            for a in achievements[:10]:
+                entry = a.get("title", "")
+                if a.get("metric"):
+                    entry += f" [{a['metric']}]"
+                ach_parts.append(entry)
+            lines.append("PRÆSTATIONER:\n" + "\n".join(f"  - {p}" for p in ach_parts))
+
+        # ── Certifikater ─────────────────────────────────────────────────────
+        if certs:
+            cert_parts = [
+                f"{c['name']}" + (f" ({c['issuer']})" if c.get("issuer") else "")
+                for c in certs
+            ]
+            lines.append("CERTIFIKATER:\n" + "\n".join(f"  - {p}" for p in cert_parts))
+
+        # ── Karrieremål og præferencer ───────────────────────────────────────
         if goals:
             goal_str = "; ".join(g["title"] for g in goals[:3])
             lines.append(f"AKTIVE MÅL: {goal_str}")
