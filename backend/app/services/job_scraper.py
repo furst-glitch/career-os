@@ -2,15 +2,14 @@
 JobScraper — henter fuld jobtekst fra kildesiderne.
 
 Strategi:
-  - Jobnet: springer over (RSS description bruges direkte)
-  - Jobindex: hent Jobindex-side → extract teaser → find ATS-link i PaidJob-inner
-              → follow ATS-link → hent fuld beskrivelse (typisk 5-8k tegn)
+  - Jobnet: scraper jobnet-siden direkte hvis RSS-beskrivelsen er < 400 tegn
+  - Jobindex: hent Jobindex vis-job-side → find link til fuld beskrivelse:
+      a) Eksternt ATS-link (HR Manager, Emply, Teamtailor, Greenhouse, ...)
+         inkl. Jobindex-interne redirect-URLs (/api/click?url=...)
+      b) Jobindex-hostet jobannonce (/jobannonce/-URL)
+      URL gemmes i job["ats_url"] for begge tilfælde.
   - Andre kilder: hent HTML, prøv JSON-LD JobPosting, derefter HTML-ekstraktion
-  - Fallback: generisk ekstraktion fra <main>/<article>
-
-ATS-platforme vi målrettet følger links til:
-  HR Manager / Talentech, Emply, Teamtailor, Greenhouse, Workable,
-  Lever, Recruitee, Personio m.fl.
+  - Fallback: følg eksternt link hvis tekst < 600 tegn
 """
 from __future__ import annotations
 
@@ -51,30 +50,49 @@ _SOURCE_CONTENT_HINTS: dict[str, list[str]] = {
 # Substrings that identify known ATS platforms in a URL.
 # Ordered by approximate Danish market share.
 _ATS_URL_MARKERS: tuple[str, ...] = (
+    # Stor dansk andel
     "hr-manager.net",
     "applicationinit.aspx",   # HR Manager URL pattern
     "emply.com",
     "emply.net",
+    "hr-on.com",
     "teamtailor.com",
+    "talentech.com",
+    "hrm.dk",
+    # Internationale — udbredt i DK
     "greenhouse.io",
     "boards.greenhouse",
     "workable.com",
     "lever.co",
     "recruitee.com",
     "personio.com",
-    "talentech.com",
-    "hrm.dk",
     "smartrecruiters.com",
     "jobvite.com",
     "icims.com",
     "successfactors",
+    "taleo.net",
+    "oraclecloud.com/hcm",
+    "bamboohr.com",
+    "workday.com",
     "breezy.hr",
     "ashbyhq.com",
+    "pinpointhq.com",
+    "rippling.com",
+    "radancy.com",
+    "jobteaser.com",
+    "rexx-systems.com",
+    "lumesse.com",
+    "talentsoft.com",
+    "cornerstone",
+    # Jobindex-interne redirect-mønstre (trackede ATS-links)
+    "jobindex.dk/api/click",
+    "jobindex.dk/cm/v2",
 )
 
-# Domains to skip when looking for ATS links (stay on job board itself)
+# Domains to skip when looking for ATS links (stay on job board itself).
+# Bemærk: jobindex.dk er IKKE her — vi skal kunne følge jobindex.dk/jobannonce/...
+# og vi håndterer nu jobindex.dk/api/click redirect-URLs separat.
 _SKIP_DOMAINS_ATS: frozenset[str] = frozenset([
-    "jobindex.dk",
     "jobindexkurser.dk",
     "ofir.dk",
     "jobnet.dk",
@@ -87,6 +105,24 @@ _SKIP_DOMAINS_ATS: frozenset[str] = frozenset([
     "apple.com",
     "play.google.com",
 ])
+
+# Platform-specifikke content-selectors til brug ved ATS-sider.
+# Supplerer de generiske HTML-hints med kendte klassenavne.
+_ATS_CONTENT_HINTS: dict[str, list[str]] = {
+    "hr-manager.net": ["job-description", "vacancy-description", "job-content", "jobad-text"],
+    "emply.com":      ["job-ad-description", "jobad", "job-body", "jobdescription"],
+    "emply.net":      ["job-ad-description", "jobad", "job-body", "jobdescription"],
+    "teamtailor.com": ["job-description__text", "job-description", "body-text"],
+    "greenhouse.io":  ["job-post-body", "content", "job-description"],
+    "boards.greenhouse": ["job-post-body", "content"],
+    "workable.com":   ["job-description", "JobDescription", "description"],
+    "recruitee.com":  ["job-description", "description", "content"],
+    "smartrecruiters.com": ["jobad-desc-container", "job-description"],
+    "bamboohr.com":   ["BambooHR-ATS-body", "description", "job-description"],
+    "ashbyhq.com":    ["ashby-job-posting-brief__description", "posting-description"],
+    "hr-on.com":      ["job-description", "jobdescription", "jobbody"],
+    "talentech.com":  ["job-description", "vacancy-description"],
+}
 
 
 # ── HTMLParser ekstraktor ─────────────────────────────────────────────────────
@@ -168,9 +204,15 @@ class _ContentExtractor(HTMLParser):
         return raw.strip()
 
 
-def _extract_text(html: str, source: str) -> str:
-    """Ekstraher jobtekst fra råt HTML via _ContentExtractor."""
-    hints = _SOURCE_CONTENT_HINTS.get(source, [])
+def _extract_text(html: str, source: str, extra_hints: list[str] | None = None) -> str:
+    """
+    Ekstraher jobtekst fra råt HTML via _ContentExtractor.
+
+    `extra_hints` tilføjes foran kildehints — bruges til ATS-platform-specifikke
+    selectors der er mere præcise end de generiske source-hints.
+    """
+    base_hints = _SOURCE_CONTENT_HINTS.get(source, [])
+    hints = list(extra_hints or []) + base_hints
     parser = _ContentExtractor(hints)
     try:
         parser.feed(html)
@@ -187,6 +229,15 @@ def _extract_text(html: str, source: str) -> str:
         text = fallback.get_text()
 
     return text[:_MAX_CHARS]
+
+
+def _ats_hints_for_url(url: str) -> list[str]:
+    """Returner platform-specifikke content-hints for en ATS-URL."""
+    url_lower = url.lower()
+    for marker, hints in _ATS_CONTENT_HINTS.items():
+        if marker in url_lower:
+            return hints
+    return []
 
 
 def _extract_jsonld_job(html: str) -> str:
@@ -235,6 +286,29 @@ def _extract_jsonld_job(html: str) -> str:
     return best
 
 
+def _extract_redirect_target(href: str) -> str | None:
+    """
+    Udpak den reelle URL fra Jobindex redirect/tracking-links.
+
+    Jobindex bruger interne redirect-URLs som:
+      /api/click?url=https://hr-manager.net/...
+      /cm/v2/jobclick?url=https://emply.com/...
+    Disse er på jobindex.dk og ville ellers skippes.
+    """
+    from urllib.parse import urlparse, parse_qs
+    try:
+        parsed = urlparse(href)
+        params = parse_qs(parsed.query)
+        for param in ("url", "redirecturl", "redirect", "target", "link"):
+            if param in params:
+                target = params[param][0]
+                if target.startswith("http"):
+                    return target
+    except Exception:
+        pass
+    return None
+
+
 def _find_ats_link(html: str) -> str | None:
     """
     Find link til ATS-platform i en Jobindex PaidJob-inner sektion.
@@ -243,13 +317,18 @@ def _find_ats_link(html: str) -> str | None:
     Emply, Teamtailor, Greenhouse m.fl.) direkte i PaidJob-inner-div'en.
     Den fulde jobbeskrivelse er på ATS-platformen.
 
+    Håndterer:
+    - Direkte ATS-links (hr-manager.net, emply.com, ...)
+    - Jobindex redirect-URLs (/api/click?url=https://...)
+    - Udvidet søgning til hele HTML hvis PaidJob-inner ikke indeholder link
+
     Søger i PaidJob-inner-sektionen først, derefter hele HTML som fallback.
     """
     from urllib.parse import urlparse
 
-    # Afgræns søgning til PaidJob-inner hvis muligt
+    # Afgræns søgning til PaidJob-inner hvis muligt — prøv 8000 tegn (var 5000)
     paidjob_idx = html.lower().find("paidjob-inner")
-    chunk = html[paidjob_idx : paidjob_idx + 5000] if paidjob_idx >= 0 else html
+    chunk = html[paidjob_idx : paidjob_idx + 8000] if paidjob_idx >= 0 else html
 
     hrefs = re.findall(r'href=["\']([^"\']+)["\']', chunk, re.IGNORECASE)
     for href in hrefs:
@@ -260,12 +339,47 @@ def _find_ats_link(html: str) -> str | None:
             domain = urlparse(href).netloc.lower()
         except Exception:
             continue
+
+        href_lower = href.lower()
+
+        # Jobindex interne redirect-links: udpak den egentlige URL
+        if "jobindex.dk" in domain:
+            if "/api/click" in href_lower or "/cm/v2" in href_lower or "redirect" in href_lower:
+                target = _extract_redirect_target(href)
+                if target:
+                    href = target
+                    href_lower = href.lower()
+                    try:
+                        domain = urlparse(href).netloc.lower()
+                    except Exception:
+                        continue
+                else:
+                    continue  # jobindex.dk link uden redirect-target — skip
+
         if any(skip in domain for skip in _SKIP_DOMAINS_ATS):
             continue
-        href_lower = href.lower()
         if any(marker in href_lower for marker in _ATS_URL_MARKERS):
             return href
 
+    return None
+
+
+def _find_jobindex_annonce_link(html: str) -> str | None:
+    """
+    Find Jobindex jobannonce-link i PaidJob-inner.
+
+    Mange virksomheder (fx Immeo) hoster deres stillingsopslag direkte på
+    Jobindex via /jobannonce/-URL'er i stedet for eksternt ATS.
+    Disse links er på jobindex.dk og skippes normalt af _find_ats_link.
+    """
+    paidjob_idx = html.lower().find("paidjob-inner")
+    chunk = html[paidjob_idx : paidjob_idx + 5000] if paidjob_idx >= 0 else html
+
+    hrefs = re.findall(r'href=["\']([^"\']+)["\']', chunk, re.IGNORECASE)
+    for href in hrefs:
+        href = href.strip()
+        if "jobindex.dk/jobannonce/" in href.lower():
+            return href
     return None
 
 
@@ -319,24 +433,32 @@ async def _scrape_one(
     """
     Henter fuld jobtekst for ét job in-place.
 
+    For Jobnet:
+      Scraper jobnet-siden direkte medmindre RSS-beskrivelsen allerede er >= 400 tegn.
+
     For Jobindex:
       1. Hent Jobindex job-side → extract PaidJob-inner teaser
-      2. Find ATS-link i PaidJob-inner (HR Manager, Emply, Teamtailor, ...)
-      3. Følg ATS-link → hent fuld jobbeskrivelse (typisk 5-8k tegn)
+      2. Find ATS-link (inkl. redirect-URLs) eller Jobindex jobannonce-link
+      3. Følg link → brug ATS-platform-specifikke selectors + JSON-LD
 
     For andre kilder:
       1. Hent HTML
       2. Prøv JSON-LD JobPosting
       3. HTML-ekstraktion (hints → fallback til <main>/<article>)
-      4. Hvis < 400 tegn: følg eventuelt eksternt link
+      4. Hvis < 600 tegn: følg eventuelt eksternt link
     """
     source = job.get("source", "")
     url = job.get("url")
 
-    if source == "jobnet":
-        return
     if not url:
         return
+
+    # Jobnet: spring over hvis RSS-beskrivelsen allerede er tilstrækkelig
+    if source == "jobnet":
+        existing = job.get("full_description") or job.get("description") or ""
+        if len(existing) >= 400:
+            return
+        # Ellers: scraper jobnet-siden for fuld beskrivelse
 
     html: str | None = None
     async with sem:
@@ -350,7 +472,7 @@ async def _scrape_one(
             logger.debug("Scrape fejlede for %s: %s", url, exc)
             return
 
-    # Ekstraher teaser fra kildesiden
+    # Ekstraher tekst fra kildesiden
     text = _extract_text(html, source)
 
     # JSON-LD JobPosting på kildesiden (sjælden for Jobindex, hyppig for andre)
@@ -359,34 +481,43 @@ async def _scrape_one(
         text = jsonld_text
         logger.debug("JSON-LD JobPosting: %d tegn fra %s", len(text), url[:80])
 
-    # ── Jobindex: følg ATS-link til fuld jobbeskrivelse ──────────────────────
+    # ── Jobindex: følg ATS-link eller Jobindex jobannonce-link ───────────────
     if source == "jobindex" and html:
-        ats_url = _find_ats_link(html)
-        if ats_url:
-            ats_html: str | None = None
+        # Prioritér eksternt ATS-link (inkl. redirect), ellers Jobindex-hostet annonce
+        followup_source_url = _find_ats_link(html) or _find_jobindex_annonce_link(html)
+        if followup_source_url:
+            followup_html: str | None = None
             async with sem:
                 try:
-                    resp_ats = await client.get(ats_url, headers=_SCRAPE_HEADERS)
-                    if resp_ats.status_code == 200:
-                        ats_html = resp_ats.text
-                        logger.debug("ATS URL: %s → %d chars", ats_url[:60], len(ats_html))
+                    resp_fu = await client.get(followup_source_url, headers=_SCRAPE_HEADERS)
+                    if resp_fu.status_code == 200:
+                        followup_html = resp_fu.text
+                        logger.debug(
+                            "Job source URL: %s → %d chars",
+                            followup_source_url[:60], len(followup_html),
+                        )
                 except Exception as exc:
-                    logger.debug("ATS-scrape fejlede for %s: %s", ats_url, exc)
+                    logger.debug("Followup-scrape fejlede for %s: %s", followup_source_url, exc)
 
-            if ats_html:
-                # JSON-LD på ATS-siden foretrækkes
-                ats_text = _extract_jsonld_job(ats_html)
-                if len(ats_text) < 300:
-                    # Generisk HTML-ekstraktion (ingen hints — brug <main>/<article>)
-                    ats_text = _extract_text(ats_html, "")
-                if len(ats_text) > len(text):
-                    text = ats_text
+            if followup_html:
+                # JSON-LD foretrækkes; dernæst ATS-platform-specifikke hints
+                fu_text = _extract_jsonld_job(followup_html)
+                if len(fu_text) < 300:
+                    ats_hints = _ats_hints_for_url(followup_source_url)
+                    fu_text = _extract_text(followup_html, "jobindex", extra_hints=ats_hints)
+                if len(fu_text) < 300:
+                    fu_text = _extract_text(followup_html, "")
+                if len(fu_text) > len(text):
+                    text = fu_text
+                    job["ats_url"] = followup_source_url
                     logger.debug(
-                        "ATS-scrape: %d tegn fra %s", len(text), ats_url[:80]
+                        "Job source scrape: %d tegn fra %s",
+                        len(text), followup_source_url[:80],
                     )
 
     # ── Generisk fallback: følg eksternt link hvis stadig for kort ───────────
-    if len(text) < 400 and html:
+    # Tærskel hævet til 600 — mange teasere er 400-600 tegn men ufuldstændige
+    if len(text) < 600 and html:
         followup_url = _find_external_job_url(html)
         if followup_url:
             followup_html: str | None = None
@@ -400,7 +531,8 @@ async def _scrape_one(
             if followup_html:
                 text2 = _extract_jsonld_job(followup_html)
                 if not text2 or len(text2) < 200:
-                    text2 = _extract_text(followup_html, "")
+                    ats_hints = _ats_hints_for_url(followup_url)
+                    text2 = _extract_text(followup_html, "", extra_hints=ats_hints)
                 if len(text2) > len(text):
                     text = text2
                     logger.debug(
