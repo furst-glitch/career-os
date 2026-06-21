@@ -15,6 +15,7 @@ interface DashboardSummary {
   notifications: Notification[];
   unread_notifications: number;
   coach_sessions: CoachSession[];
+  saved_jobs_count: number;
   profile: { cv_completeness: number; has_master_cv: boolean };
 }
 
@@ -27,7 +28,7 @@ interface Application {
   jobs?: { title: string; company: string };
 }
 interface Interview {
-  id: string; deadline: string; notes?: string;
+  id: string; current_status?: string; deadline?: string | null; notes?: string;
   jobs?: { title: string; company: string };
 }
 interface RecentJob {
@@ -51,6 +52,19 @@ interface AnalyticsSummary {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
+  // Pipeline 2.0
+  fundet: "bg-slate-100 text-slate-600",
+  gemt: "bg-slate-100 text-slate-700",
+  cv_genereret: "bg-sky-100 text-sky-700",
+  ansoegning_genereret: "bg-blue-100 text-blue-700",
+  ansoegt: "bg-violet-100 text-violet-700",
+  samtale_1: "bg-purple-100 text-purple-700",
+  samtale_2: "bg-fuchsia-100 text-fuchsia-700",
+  case_stadie: "bg-amber-100 text-amber-700",
+  tilbud: "bg-green-100 text-green-700",
+  ansat: "bg-emerald-200 text-emerald-800",
+  afslag: "bg-red-100 text-red-600",
+  // Pipeline 1.0
   draft: "bg-slate-100 text-slate-600",
   preparing: "bg-blue-100 text-blue-700",
   ready: "bg-cyan-100 text-cyan-700",
@@ -63,6 +77,12 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  // Pipeline 2.0
+  fundet: "Fundet", gemt: "Gemt",
+  cv_genereret: "CV genereret", ansoegning_genereret: "Ansøgning genereret",
+  ansoegt: "Ansøgt", samtale_1: "1. samtale", samtale_2: "2. samtale",
+  case_stadie: "Case", tilbud: "Tilbud", ansat: "Ansat", afslag: "Afslag",
+  // Pipeline 1.0
   draft: "Kladde", preparing: "Forbereder", ready: "Klar",
   submitted: "Sendt", screening: "Screening", interviewing: "Interview",
   offer: "Tilbud", hired: "Ansat", rejected: "Afvist", withdrawn: "Trukket tilbage",
@@ -88,7 +108,8 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString("da-DK", { day: "numeric", month: "short" });
 }
 
-function fmtDeadline(iso: string) {
+function fmtDeadline(iso: string | null | undefined) {
+  if (!iso) return { label: "Ingen dato", cls: "text-slate-400" };
   const d = new Date(iso);
   const now = new Date();
   const diff = Math.floor((d.getTime() - now.getTime()) / 86400000);
@@ -211,6 +232,29 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ── Pipeline funnel ── */}
+      {s && (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
+          {[
+            { label: "Gemte jobs",   key: null,          count: s.saved_jobs_count,                   color: "text-slate-700",   href: "/jobs" },
+            { label: "Ansøgninger",  key: "ansoegt",     count: s.application_counts["ansoegt"] ?? 0, color: "text-violet-700",  href: "/applications" },
+            { label: "1. samtale",   key: "samtale_1",   count: s.application_counts["samtale_1"] ?? 0, color: "text-purple-700", href: "/applications" },
+            { label: "2. samtale",   key: "samtale_2",   count: s.application_counts["samtale_2"] ?? 0, color: "text-fuchsia-700", href: "/applications" },
+            { label: "Tilbud",       key: "tilbud",      count: s.application_counts["tilbud"] ?? 0,  color: "text-green-700",   href: "/applications" },
+            { label: "Afslag",       key: "afslag",      count: s.application_counts["afslag"] ?? 0,  color: "text-red-600",     href: "/applications" },
+          ].map(({ label, count, color, href }) => (
+            <Link
+              key={label}
+              href={href}
+              className="rounded-xl border border-slate-200 bg-white p-4 text-center hover:border-blue-200 hover:shadow-sm transition-all"
+            >
+              <p className={`text-2xl font-bold ${color}`}>{count}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{label}</p>
+            </Link>
+          ))}
+        </div>
+      )}
+
       {/* ── CV alert if no master CV ── */}
       {s && !s.profile.has_master_cv && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 flex items-center justify-between gap-4">
@@ -323,20 +367,29 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* Upcoming interviews */}
+          {/* Kommende samtaler */}
           {(s?.upcoming_interviews?.length ?? 0) > 0 && (
-            <div className="rounded-xl border border-amber-100 bg-amber-50 p-5">
-              <SectionHeader title="Kommende interviews" href="/applications" />
+            <div className="rounded-xl border border-purple-100 bg-purple-50 p-5">
+              <SectionHeader title="Kommende samtaler" href="/applications" />
               <div className="space-y-3">
                 {s!.upcoming_interviews.map((iv) => {
                   const d = fmtDeadline(iv.deadline);
+                  const statusLabel = STATUS_LABELS[iv.current_status ?? ""] ?? iv.current_status ?? "";
+                  const statusColor = STATUS_COLORS[iv.current_status ?? ""] ?? "bg-slate-100 text-slate-600";
                   return (
-                    <div key={iv.id} className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-slate-800">{iv.jobs?.title}</p>
+                    <div key={iv.id} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-800 truncate">{iv.jobs?.title}</p>
                         <p className="text-xs text-slate-500">{iv.jobs?.company}</p>
                       </div>
-                      <span className={`text-sm font-semibold ${d.cls}`}>{d.label}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {statusLabel && (
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}>
+                            {statusLabel}
+                          </span>
+                        )}
+                        <span className={`text-xs font-semibold ${d.cls}`}>{d.label}</span>
+                      </div>
                     </div>
                   );
                 })}

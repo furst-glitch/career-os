@@ -68,13 +68,26 @@ async def get_dashboard_summary(
         s = a.get("current_status") or "draft"
         status_counts[s] = status_counts.get(s, 0) + 1
 
+    # Gemte jobs (is_saved=true)
+    try:
+        _saved_result = (
+            supabase.table("jobs")
+            .select("id", count="exact")
+            .eq("user_id", uid)
+            .eq("is_saved", True)
+            .execute()
+        )
+        saved_jobs_count = _saved_result.count or 0
+    except Exception:
+        saved_jobs_count = 0
+
+    # Kommende samtaler — vis alle, ikke kun dem med deadline
     interviews = _q(lambda: (
         supabase.table("application_pipeline")
-        .select("id, deadline, notes, jobs(title, company)")
+        .select("id, current_status, deadline, notes, jobs(title, company)")
         .eq("user_id", uid)
         .in_("current_status", ["interviewing", "screening", "samtale_1", "samtale_2"])
-        .not_.is_("deadline", "null")
-        .order("deadline")
+        .order("created_at", desc=True)
         .limit(5)
         .execute()
         .data or []
@@ -145,6 +158,7 @@ async def get_dashboard_summary(
         "notifications": notifications,
         "unread_notifications": unread_count,
         "coach_sessions": coach_sessions,
+        "saved_jobs_count": saved_jobs_count,
         "profile": {
             "cv_completeness": cv_score,
             "has_master_cv": has_mcv,

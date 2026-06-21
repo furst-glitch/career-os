@@ -319,6 +319,19 @@ const REMOTE_LABELS: Record<string, string> = {
   remote: "Remote", hybrid: "Hybrid", onsite: "På kontoret",
 };
 
+// Pipeline-status dropdown (erstatter den gamle "Ansøgt"-knap)
+const PIPELINE_OPTIONS: { value: string; label: string }[] = [
+  { value: "gemt",        label: "Gemt" },
+  { value: "preparing",   label: "Forbereder" },
+  { value: "ansoegt",     label: "Ansøgt" },
+  { value: "samtale_1",   label: "1. Samtale" },
+  { value: "samtale_2",   label: "2. Samtale" },
+  { value: "case_stadie", label: "Case" },
+  { value: "tilbud",      label: "Tilbud" },
+  { value: "afslag",      label: "Afslag" },
+  { value: "ansat",       label: "Ansat" },
+];
+
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 const I = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white";
@@ -345,6 +358,38 @@ function Spinner() {
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
       </svg>
+    </div>
+  );
+}
+
+function StatusDropdown({ job, onStatusChange }: {
+  job: Job;
+  onStatusChange: (jobId: string, pipelineId: string, status: string) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  if (!job.pipeline_id) return null;
+  const cur = job.pipeline_status ?? "gemt";
+  const cls = STATUS_COLORS[cur] ?? "bg-slate-100 text-slate-700";
+  return (
+    <div className={`relative flex-1 rounded-lg ${cls}`}>
+      <select
+        value={cur}
+        disabled={saving}
+        onChange={async (e) => {
+          const s = e.target.value;
+          setSaving(true);
+          try { await onStatusChange(job.id, job.pipeline_id!, s); }
+          finally { setSaving(false); }
+        }}
+        className="w-full appearance-none bg-transparent py-1.5 pl-2.5 pr-6 text-xs font-medium cursor-pointer disabled:opacity-60 outline-none"
+      >
+        {PIPELINE_OPTIONS.map(o => (
+          <option key={o.value} value={o.value} className="bg-white text-slate-900">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 opacity-50 text-[10px]">▾</span>
     </div>
   );
 }
@@ -437,13 +482,13 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMarkAnsoegt }: {
+function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onStatusChange }: {
   job: Job;
   onToggleSave: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshMatch: (id: string) => void;
   onQuickGen: (job: Job, docType: "cv" | "cover_letter") => void;
-  onMarkAnsoegt: (job: Job) => void;
+  onStatusChange: (jobId: string, pipelineId: string, status: string) => Promise<void>;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -520,14 +565,7 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onMa
         >
           Hurtig ansøgning
         </button>
-        {job.pipeline_id && ["cv_genereret", "ansoegning_genereret"].includes(job.pipeline_status ?? "") && (
-          <button
-            onClick={() => onMarkAnsoegt(job)}
-            className="flex-1 rounded-lg border border-violet-200 bg-violet-50 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 transition-colors"
-          >
-            Ansøgt
-          </button>
-        )}
+        <StatusDropdown job={job} onStatusChange={onStatusChange} />
       </div>
 
       <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
@@ -700,11 +738,18 @@ export default function JobsPage() {
     showToast("Match score opdateret");
   }
 
-  async function handleMarkAnsoegt(job: Job) {
-    if (!job.pipeline_id) return;
-    await apiPut(`/applications/${job.pipeline_id}`, { current_status: "ansoegt" });
-    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, pipeline_status: "ansoegt" } : j));
-    showToast("Markeret som ansøgt — dokumenter er gemt under jobbet");
+  async function handleStatusChange(jobId: string, pipelineId: string, status: string) {
+    await apiPut(`/applications/${pipelineId}`, { current_status: status });
+    setJobs(prev => prev.map(j => j.id === jobId ? { ...j, pipeline_status: status } : j));
+    const toasts: Record<string, string> = {
+      ansoegt:     "Markeret som ansøgt — ansøgningsdato gemt",
+      samtale_1:   "1. samtale markeret — forberedelsespakke genereres i baggrunden",
+      samtale_2:   "2. samtale markeret — forberedelsespakke opdateres",
+      tilbud:      "Tillykke — tilbud registreret",
+      afslag:      "Afslag registreret",
+      ansat:       "Ansat — tillykke med jobbet",
+    };
+    showToast(toasts[status] ?? "Status opdateret");
   }
 
   const filtered = jobs.filter(j => {
@@ -815,7 +860,7 @@ export default function JobsPage() {
               onDelete={handleDelete}
               onRefreshMatch={handleRefreshMatch}
               onQuickGen={(j, dt) => setQuickGenJob({ job: j, docType: dt })}
-              onMarkAnsoegt={handleMarkAnsoegt}
+              onStatusChange={handleStatusChange}
             />
           ))}
         </div>

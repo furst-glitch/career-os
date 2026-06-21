@@ -51,7 +51,7 @@ class ApplicationService:
         return result.data[0]
 
     def update_pipeline(self, user_id: str, pipeline_id: str, data: dict) -> dict:
-        allowed = {"current_status", "priority", "deadline", "notes"}
+        allowed = {"current_status", "priority", "deadline", "notes", "submitted_at"}
         payload = {k: v for k, v in data.items() if k in allowed}
         result = (
             self.db.table("application_pipeline")

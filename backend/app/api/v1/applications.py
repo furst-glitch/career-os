@@ -143,6 +143,12 @@ async def update_application(
     if body.priority and body.priority not in VALID_PRIORITIES:
         raise HTTPException(400, f"Ugyldig prioritet: {body.priority}")
     data = {k: v for k, v in body.model_dump().items() if v is not None}
+
+    # Registrer ansøgningsdato ved første statusskift til ansoegt
+    if body.current_status == "ansoegt" and not app.get("submitted_at"):
+        from datetime import UTC, datetime
+        data["submitted_at"] = datetime.now(UTC).isoformat()
+
     updated = svc.update_pipeline(user["id"], pipeline_id, data)
 
     # Auto-generer interviewforberedelse ved samtale 1 og 2
