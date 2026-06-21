@@ -114,6 +114,7 @@ const NAV = [
   {
     label: "Career Memory",
     href: "/memory",
+    hidden: true,
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
@@ -330,7 +331,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-        {NAV.map((item) => {
+        {NAV.filter((item) => !item.hidden).map((item) => {
           const isActive = item.exact
             ? pathname === item.href
             : pathname.startsWith(item.href);
