@@ -152,10 +152,18 @@ class CVAgent(BaseAgent):
         """
         Genererer et CV-udkast til brug i GenerationPipeline (trin 1 af CV-pipeline).
 
-        input_data:
-          job_title, job_company, job_description, job_requirements
-          candidate_summary, language, writing_style, focus_areas
+        LLM genererer KUN: Professionel profil + Erhvervserfaring + Udvalgte resultater.
+        Hardcoded fra snapshot (bypasser LLM): Kompetencer, Systemer, Uddannelse, Sprog.
+
+        Returnerer AgentResult med JSON-string som content:
+          { "_structured_cv_v2": true, "cv_text": "...", "education": [...],
+            "competencies": [...], "systems": [...], "languages": [...], "language": "da" }
+
+        Den strukturerede JSON serialiseres til document_versions.content.
+        Ved PDF-render detekteres JSON-format og renderer via structured pipeline.
         """
+        import json as _json
+
         language = input_data.get("language", "da")
         job_title = input_data.get("job_title", "")
         job_company = input_data.get("job_company", "")
@@ -164,326 +172,143 @@ class CVAgent(BaseAgent):
         candidate_summary = input_data.get("candidate_summary", "")
         req_text = "\n".join(f"- {r}" for r in requirements[:15]) if requirements else "Ikke angivet"
 
-        # Fetch full snapshot to pre-build education + skills blocks
-        # This guarantees both sections are ALWAYS present in the prompt
-        # regardless of whether the LLM chooses to include them.
+        # Fetch snapshot — source of truth for hardcoded sections
         try:
             from app.services.memory_snapshot_service import MemorySnapshotService
             snapshot = MemorySnapshotService(self.supabase).snapshot(self.user_id)
         except Exception:
             snapshot = {}
 
-        job_dict = {
-            "title": job_title,
-            "description": job_description,
-            "requirements": requirements,
-        }
-        education_block  = await self._build_education_section("", snapshot)
-        skills_block     = await self._build_skills_section("", snapshot, job_dict)
+        job_dict = {"title": job_title, "description": job_description, "requirements": requirements}
 
-        if language == "da":
+        # Build hardcoded structured sections — these NEVER go through LLM
+        education_list   = self._build_structured_education(snapshot)
+        skills_data      = self._build_structured_skills(snapshot, job_dict)
+        languages_list   = [
+            {"language": s.get("name", ""), "level": s.get("level", "")}
+            for s in (snapshot.get("skills") or [])
+            if s.get("category") == "language" and s.get("name")
+        ]
+
+        da = language == "da"
+        if da:
             system = (
                 f"Du er en ekspert CV-skribent. Skriv et stærkt, jobspecifikt CV til stillingen "
                 f"{job_title} hos {job_company}.\n\n"
+                "VIGTIGT — BEGRÆNSEDE SEKTIONER:\n"
+                "Du skriver KUN to sektioner i dette svar:\n"
+                "  1. ## Professionel profil\n"
+                "  2. ## Erhvervserfaring\n"
+                "  3. ## Udvalgte resultater (kun hvis kandidaten har kvantificerede præstationer)\n\n"
+                "Skriv IKKE: Kompetencer, Systemer, Uddannelse, Certifikater, Sprog, Kontakt.\n"
+                "Disse sektioner tilføjes automatisk fra databasen og må ALDRIG duplikeres her.\n\n"
                 "PRÆCISIONSTJEK (gennemfør mentalt inden du skriver):\n"
                 "1. Har kandidaten formel personaleledelse (direkte rapporteringer) — eller kun faglig/projektledelse?\n"
                 "   Skriv ALDRIG 'ledelse' uden at specificere typen.\n"
-                "2. Er kandidaten systemejer/ansvarlig — eller power user/implementerer?\n"
-                "3. Er alle DKK-beløb, procenter og headcount bekræftet i profilen?\n"
-                "4. Er kandidaten enebidragsyder eller del af et team?\n\n"
-                "PRÆCISIONSREGLER — TO FEJLTYPER (begge skader kandidaten):\n"
+                "2. Er alle DKK-beløb, procenter og headcount bekræftet i profilen?\n"
+                "3. Er kandidaten enebidragsyder eller del af et team?\n\n"
+                "PRÆCISIONSREGLER — TO FEJLTYPER:\n"
                 "Type A — Overstatement (aldrig tilladt):\n"
                 "- 'drev implementeringen' ≠ 'var IT-ansvarlig'\n"
-                "- 'leverede data til audit' ≠ 'deltog i auditgruppe'\n"
                 "- 'bidragede til X' ≠ 'var ansvarlig for X'\n"
-                "- 'har arbejdet med X' ≠ 'er ekspert i X'\n"
                 "- Opfind ALDRIG eksempler, beløb, datoer eller resultater\n"
                 "Type B — Understatement (også en fejl):\n"
-                "- Bekræftede kompetencer SKAL med — at udelade data fra profilen er en fejl\n"
-                "- Erfaringer og uddannelse i profilen SKAL inkluderes\n"
-                "- Brug hæmmet sprog for afledt data ('sandsynligvis', 'formentlig') men inkludér det\n"
+                "- Erfaringer i profilen SKAL inkluderes — afkort aldrig karrierehistorik\n"
+                "- Brug hæmmet sprog for afledt data ('sandsynligvis') men inkludér det\n"
                 "Bekræftet data: inkludér altid. Afledt data: hæmmet sprog. Opfundet: aldrig.\n\n"
                 "LEDERSKABSSPROG:\n"
-                "- Formel personaleledelse: skriv 'personaleleder med X direkte rapporteringer'\n"
-                "- Faglig ledelse: skriv 'faglig leder / rådgiver for X'\n"
-                "- Projektledelse: skriv 'projektleder for X'\n"
+                "- Formel personaleledelse: 'personaleleder med X direkte rapporteringer'\n"
+                "- Faglig ledelse: 'faglig leder / rådgiver for X'\n"
+                "- Projektledelse: 'projektleder for X'\n"
                 "Skriv ALDRIG bare 'ledelse' uden type.\n\n"
-                "KVANTIFICERINGSREGLER:\n"
-                "Brug KUN tal kandidaten har bekræftet. Brug 'ca.' eller '+' ved approksimationer.\n"
-                "Foretruk: DKK-beløb, antal medarbejdere, antal lokationer, % besparelser, antal år.\n"
-                "Rund ALDRIG op. Opfind ALDRIG metrics.\n\n"
-                "FULDSTÆNDIGHEDSMANDAT:\n"
-                "CV'et skal føles komplet og detaljeret — aldrig minimalt.\n"
-                "Primær/nuværende rolle: minimum 12-15 bullets\n"
-                "Sekundære roller (seneste 2-3 relevante): minimum 4-6 bullets\n"
-                "Ældre roller: minimum 1-2 bullets — aldrig udelad\n\n"
-                "OBLIGATORISKE SEKTIONER — MASTER CV 2.0 (9 sektioner, altid alle til stede):\n\n"
-                "STRUKTUR (brug præcis disse sektionsnavne med ## foran, i denne rækkefølge):\n\n"
                 "## Professionel profil\n"
                 "4-5 sætninger der præcist matcher kandidaten til netop dette job. "
                 "Inkludér IKKE målvirksomhedens navn — profilteksten skal være portabel. "
                 "Nævn kernekompetencer, årstal erfaring, og hvad kandidaten bringer som unik værdi.\n\n"
                 "## Erhvervserfaring\n"
                 "Omvendt kronologisk. Inkludér ALLE stillinger — afkort aldrig karrierehistorik.\n"
-                "For HVER stilling SKAL alle tre elementer være til stede i denne rækkefølge:\n\n"
-                "ELEMENT 1 — OVERSKRIFT (altid):\n"
-                "  [Stillingsbetegnelse] – [Virksomhed] | [Startår] – [Slutår eller nu]\n"
-                "  Eksempel: 'Business Partner – SWECO Danmark | 2018 – nu'\n\n"
+                "For HVER stilling SKAL alle tre elementer være til stede:\n\n"
+                "ELEMENT 1 — OVERSKRIFT:\n"
+                "  [Stillingsbetegnelse] – [Virksomhed] | [Startår] – [Slutår eller nu]\n\n"
                 "ELEMENT 2 — KONTEKSTLINJE (altid, 1-2 sætninger — IKKE et bullet):\n"
-                "  Hvad rollen indebar på et overordnet niveau, INDEN bullets læses.\n"
-                "  Inkludér scope-indikatorer hvis kendte: antal lokationer, medarbejdere, budget, teamstørrelse.\n"
-                "  Nutid for nuværende stilling, datid for tidligere.\n"
-                "  Gode eksempler:\n"
-                "  'Central FM-ressource på tværs af 20+ lokationer og ~2.000 medarbejdere med driftsbudgetter på 120+ mio. kr.'\n"
-                "  'Faglig leder med ansvar for driftsøkonomien i lovreguleret forsyningsmiljø under fusion af to organisationer.'\n"
-                "  'Administrativt og kundevendt arbejde i kommunal forsyningsvirksomhed.'\n"
-                "  Dårlige eksempler (for vage):\n"
-                "  'Arbejdede med procurement og FM.' / 'Varetog administrative opgaver.'\n"
-                "  Spring ALDRIG Element 2 over — skriv minimum én sætning baseret på tilgængelige data.\n\n"
+                "  Hvad rollen indebar på et overordnet niveau. "
+                "  Inkludér scope: antal lokationer, medarbejdere, budget.\n"
+                "  Spring ALDRIG Element 2 over.\n\n"
                 "ELEMENT 3 — BULLETS:\n"
-                "  Primær/nuværende rolle: 12-15 bullets\n"
-                "  Sekundære roller: 4-6 bullets\n"
-                "  Ældre roller: 1-2 bullets\n"
-                "  Konkrete resultater, ansvar og bidrag. Minimum én hel sætning per bullet.\n"
-                "  Mix af: hvad du gjorde + hvad det resulterede i.\n"
-                "  Aktivt sprog: 'styrede', 'opbyggede', 'drev', 'designede'\n"
-                "  IKKE passivt: 'understøttede', 'bidragede til at understøtte'\n\n"
-                "Skriv ALDRIG bullets uden en kontekstlinje over dem.\n\n"
+                "  Nuværende rolle: 12-15 bullets. Sekundære: 4-6. Ældre: 1-2.\n"
+                "  Aktivt sprog: 'styrede', 'opbyggede', 'drev'.\n"
+                "  IKKE passivt: 'understøttede', 'bidragede til at understøtte'.\n\n"
                 "## Udvalgte resultater\n"
-                "Hent fra PRÆSTATIONER-sektionen i kandidatprofilen. "
-                "Vælg de 5-8 stærkeste og mest jobspecifikke kvantificerede resultater. "
-                "Format: '- [Resultat med metric]'. Inkludér DKK-besparelser, % forbedringer, headcount, tidsbesparelser. "
-                "Udelad IKKE denne sektion hvis PRÆSTATIONER findes i profilen.\n\n"
-                "## Kompetencer\n"
-                "Hent KUN fra KOMPETENCER-sektionen i kandidatprofilen (ikke fra erfaringstekster). "
-                "Inkludér faglige domænekompetencer. Minimum 10 punkter. "
-                "Format: kommasepareret liste eller bullets. "
-                "Fremhæv dem der matcher dette job.\n\n"
-                "## Systemer\n"
-                "Hent KUN fra SYSTEMER-sektionen i kandidatprofilen (ikke fra erfaringstekster). "
-                "List alle IT-systemer, platforme og teknologier kandidaten behersker. "
-                "Angiv gerne kategori: ERP / CAFM / Office / BI / Dev. "
-                "Udelad ALDRIG systemer der er bekræftet i profilen.\n\n"
-                "## Uddannelse\n"
-                "[Uddannelse] – [Institution] | [ÅÅÅÅ] – [ÅÅÅÅ]\n"
-                "Denne sektion SKAL ALTID med. Hent fra UDDANNELSE-sektionen i profilen. "
-                "Ingen uddannelse fundet: skriv '[Uddannelse ikke angivet]' — udelad aldrig sektionen.\n\n"
-                "## Certifikater\n"
-                "Hent fra CERTIFIKATER-sektionen i kandidatprofilen. "
-                "Inkludér AMU-kurser, lederuddannelser, faglige certifikater, frivillige uddannelser og licensforløb. "
-                "Format: '- [Certifikat/kursus] – [Udbyder] | [År]'. "
-                "Udelad ALDRIG certifikater der er bekræftet i profilen.\n\n"
-                "## Sprog\n"
-                "Hent fra SPROG-sektionen i kandidatprofilen. "
-                "Angiv alle sprog med niveau (modersmål, flydende, arbejdsniveau).\n\n"
-                "FULDSTÆNDIGHEDSREGLER (obligatoriske — alle otte):\n"
-                "1. FULD KARRIEREHISTORIK: Inkludér ALLE stillinger fra profilen — afkort aldrig.\n"
-                "   Ældre stillinger: 1-2 bullets er nok, men stillingen SKAL med.\n"
-                "2. UDDANNELSE ALTID: Hent fra UDDANNELSE i snapshot. Skriv aldrig 'ikke angivet'\n"
-                "   hvis uddannelse findes nogen steder i systemet.\n"
-                "3. RESULTATER SEPARAT: Kvantificerede præstationer hører i 'Udvalgte resultater' —\n"
-                "   ikke kun som bullets i erfaringsteksten.\n"
-                "4. SYSTEMER SEPARAT: Systemer og IT-platforme hører i 'Systemer' —\n"
-                "   ikke kun gemt i bullets under erfaringer.\n"
-                "5. AKTIVT SPROG:\n"
-                "   FORKERT: 'understøttede styring af partnerskaber'\n"
-                "   RIGTIGT:  'styrede strategiske partnerskaber'\n"
-                "   FORKERT: 'bidragede til besparelser'\n"
-                "   RIGTIGT:  'reducerede omkostninger med 5+ mio. kr.'\n"
-                "   Brug altid det stærkeste aktive verbum der kan verificeres.\n"
-                "6. INGEN DUBLETTER: Kompetencer og systemer må ikke gentages ordret i erfaringsbullets.\n"
-                "7. KONTAKT ÉN GANG: Navn og kontaktinfo vises kun i headeren — ingen KONTAKT-sektion i teksten.\n"
-                "8. LINKEDIN-URL: Vis altid renset URL uden https://www. præfiks.\n\n"
-                "PRE-PROCESSERET DATA — OBLIGATORISK BRUG:\n"
-                "Brugerens besked indeholder en blok markeret '=== PRE-PROCESSERET DATA ==='. "
-                "Denne blok indeholder UDDANNELSE og KOMPETENCER/SYSTEMER hentet direkte fra databasen. "
-                "Du SKAL bruge disse data som grundlag for de respektive sektioner.\n"
-                "UDDANNELSE-REGEL (ikke-forhandlingsbar):\n"
-                "- Sektionen ## Uddannelse SKAL ALTID være til stede i output.\n"
-                "- Kopiér indholdet fra UDDANNELSE-blokken i pre-processeret data.\n"
-                "- Skriv ALDRIG 'ikke angivet', 'ukendt' eller spring sektionen over.\n"
-                "- Hvis pre-processeret data viser 'Uddannelsesoplysninger ikke registreret': "
-                "  skriv dette — men ALDRIG en tom sektion.\n"
-                "KOMPETENCER-REGEL (ikke-forhandlingsbar):\n"
-                "- Sektionen ## Kompetencer SKAL ALTID indeholde minimum 8 punkter.\n"
-                "- Brug KOMPETENCER-listen fra pre-processeret data som udgangspunkt.\n"
-                "- Rank jobspecifikke kompetencer øverst.\n"
-                "- Tilføj aldrig færre end 8 punkter — suppler med afledte kompetencer fra erfaringstitler.\n"
-                "SYSTEMER-REGEL (ikke-forhandlingsbar):\n"
-                "- Sektionen ## Systemer SKAL ALTID indeholde mindst de systemer fra SYSTEMER-listen.\n"
-                "- Tilføj gerne systemer der fremgår af erfaringsbullets, men behold dem fra listen.\n\n"
+                "Hent fra PRÆSTATIONER i kandidatprofilen. 5-8 stærkeste kvantificerede resultater. "
+                "Udelad sektionen hvis ingen præstationer er oplyst.\n\n"
                 "REGLER:\n"
                 "- Brug KUN de eksakte datoer fra kandidatprofilen. Opfind ALDRIG datoer.\n"
-                "- Nuværende arbejdsgiver: startår SKAL komme fra profilen — tjek snapshot.\n"
-                "- Hvis startår er ukendt: brug 'ca. [estimeret år]'. Skriv ALDRIG '[årstal ukendt]'.\n"
-                "- Hvis slutår er nu: skriv 'nu' (dansk) eller 'present' (engelsk).\n"
-                "- Tilpas til kandidatens erfaringsbredde — afkort ALDRIG karrierehistorik.\n"
-                "- Fremhæv erfaringer og kompetencer der matcher dette specifikke job.\n"
-                "- ESG: hvis kandidaten har ESG-erfaring, specificér Scope-kategori og præcis rolle.\n"
+                "- Nuværende stilling: slutår = 'nu'.\n"
+                "- ESG: specificér Scope-kategori og præcis rolle.\n"
                 "- Skriv med korrekte danske bogstaver: æ, ø, å, Æ, Ø, Å.\n"
-                "- CO2 skrives altid som 'CO2' — aldrig CO₂ eller andet.\n"
+                "- CO2 skrives altid som 'CO2'.\n"
                 "- Brug IKKE **, *, eller andre markdown-symboler — kun ## til sektionshoveder og - til bullets.\n"
                 "- Brug ALDRIG '---' som tekstseparator.\n"
-                "- Skriv INGEN overskrift/navn øverst — det tilføjes automatisk fra profilen."
+                "- Skriv INGEN overskrift/navn øverst — det tilføjes automatisk."
             )
             user_msg = (
                 f"Jobkrav:\n{req_text}\n\nJobbeskrivelse:\n{job_description}\n\n"
-                f"Kandidatprofil (brug KUN disse datoer og fakta — opfind intet):\n{candidate_summary}\n\n"
-                f"=== PRE-PROCESSERET DATA (BRUG DISSE DIREKTE — INGEN OMSKRIVNING) ===\n"
-                f"{education_block}\n\n"
-                f"{skills_block}\n"
-                f"=== SLUT PRE-PROCESSERET DATA ==="
+                f"Kandidatprofil (brug KUN disse datoer og fakta — opfind intet):\n{candidate_summary}"
             )
         else:
             system = (
                 f"You are an expert CV writer. Write a strong, job-specific CV for the "
                 f"{job_title} position at {job_company}.\n\n"
+                "IMPORTANT — RESTRICTED SECTIONS:\n"
+                "Write ONLY these sections in this response:\n"
+                "  1. ## Professional Profile\n"
+                "  2. ## Work Experience\n"
+                "  3. ## Selected Achievements (only if the candidate has quantified results)\n\n"
+                "Do NOT write: Skills, Systems, Education, Certifications, Languages, Contact.\n"
+                "These sections are injected automatically from the database.\n\n"
                 "PRECISION CHECK (perform mentally before writing):\n"
-                "1. Does the candidate have formal people management (direct reports) — or only functional/project leadership?\n"
+                "1. Does the candidate have formal people management — or only functional/project leadership?\n"
                 "   NEVER write 'management' without specifying the type.\n"
-                "2. Was the candidate system owner/responsible — or power user/implementer?\n"
-                "3. Are all amounts, percentages and headcount confirmed in the profile?\n"
-                "4. Is the candidate a sole contributor or part of a team?\n\n"
-                "PRECISION RULES — TWO ERROR TYPES (both harm the candidate):\n"
+                "2. Are all amounts, percentages and headcount confirmed in the profile?\n"
+                "3. Is the candidate a sole contributor or part of a team?\n\n"
+                "PRECISION RULES — TWO ERROR TYPES:\n"
                 "Type A — Overstatement (never allowed):\n"
                 "- 'drove the implementation' ≠ 'was IT responsible'\n"
-                "- 'provided data for audits' ≠ 'participated in audit group'\n"
                 "- 'contributed to X' ≠ 'was responsible for X'\n"
-                "- 'has worked with X' ≠ 'is an expert in X'\n"
                 "- NEVER invent examples, amounts, dates or results\n"
                 "Type B — Understatement (also an error):\n"
-                "- Confirmed competencies MUST be included — omitting profile data is an error\n"
-                "- Experience and education in the profile MUST be included\n"
-                "- Use hedged language for inferred data ('likely', 'presumably') but include it\n"
-                "Confirmed data: always include. Inferred data: hedge language. Invented: never.\n\n"
+                "- Experience in the profile MUST be included — never truncate career history\n"
+                "- Use hedged language for inferred data ('likely') but include it\n"
+                "Confirmed data: always include. Inferred: hedge. Invented: never.\n\n"
                 "LEADERSHIP LANGUAGE:\n"
-                "- Formal people management: write 'people manager with X direct reports'\n"
-                "- Functional leadership: write 'functional lead / advisor for X'\n"
-                "- Project leadership: write 'project lead for X'\n"
+                "- Formal people management: 'people manager with X direct reports'\n"
+                "- Functional leadership: 'functional lead / advisor for X'\n"
+                "- Project leadership: 'project lead for X'\n"
                 "NEVER write just 'management' without specifying the type.\n\n"
-                "QUANTIFICATION RULES:\n"
-                "Only use numbers the candidate has confirmed. Use 'approx.' or '+' for approximations.\n"
-                "Prefer: monetary amounts, headcount, number of locations, % savings, years.\n"
-                "NEVER round up. NEVER invent metrics.\n\n"
-                "COMPLETENESS MANDATE:\n"
-                "The CV must feel complete and detailed, not minimal.\n"
-                "Primary/current role: minimum 12-15 bullets\n"
-                "Secondary roles (recent 2-3 relevant): minimum 4-6 bullets\n"
-                "Older roles: minimum 1-2 bullets — never omit\n\n"
-                "MANDATORY SECTIONS — MASTER CV 2.0 (9 sections, all always present):\n\n"
-                "STRUCTURE (use exactly these section names with ## prefix, in this order):\n\n"
                 "## Professional Profile\n"
-                "4-5 sentences precisely matching the candidate to this specific job. "
-                "Do NOT include the target company name — the profile text must be portable. "
-                "Mention core competencies, years of experience, and unique value brought.\n\n"
+                "4-5 sentences precisely matching the candidate to this job. "
+                "Do NOT include the target company name. "
+                "Mention core competencies, years of experience, and unique value.\n\n"
                 "## Work Experience\n"
-                "Reverse chronological. Include ALL roles — never truncate career history.\n"
-                "For EACH role ALL THREE elements MUST be present in this order:\n\n"
-                "ELEMENT 1 — JOB HEADER (always):\n"
-                "  [Job Title] – [Company] | [Start year] – [End year or Present]\n"
-                "  Example: 'Business Partner – SWECO Denmark | 2018 – Present'\n\n"
-                "ELEMENT 2 — CONTEXT LINE (always, 1-2 sentences — NOT a bullet):\n"
-                "  What the role involved at a high level, BEFORE the reader sees the bullets.\n"
-                "  Include scope indicators where known: locations, headcount, budget, team size.\n"
-                "  Present tense for current role, past tense for previous.\n"
-                "  Good examples:\n"
-                "  'Central FM resource across 20+ locations and ~2,000 employees with operating budgets of 120+ million DKK.'\n"
-                "  'Functional lead responsible for operational economics in a regulated utility environment during merger.'\n"
-                "  'Administrative and customer-facing work in a municipal utility company.'\n"
-                "  Bad examples (too vague):\n"
-                "  'Worked with procurement and FM.' / 'Handled administrative tasks.'\n"
-                "  NEVER skip Element 2 — always write at least one sentence based on available data.\n\n"
-                "ELEMENT 3 — BULLETS:\n"
-                "  Primary/current role: 12-15 bullets\n"
-                "  Secondary roles: 4-6 bullets\n"
-                "  Older roles: 1-2 bullets\n"
-                "  Specific achievements, responsibilities and contributions. One complete sentence each.\n"
-                "  Mix of: what you did + what it resulted in.\n"
-                "  Active language: 'managed', 'built', 'drove', 'designed'\n"
-                "  NOT passive: 'supported', 'contributed to supporting'\n\n"
-                "NEVER output bullets without a context line above them.\n\n"
+                "Reverse chronological. Include ALL roles — never truncate.\n"
+                "For EACH role include:\n"
+                "  HEADER: [Job Title] – [Company] | [Start year] – [End year or Present]\n"
+                "  CONTEXT LINE (1-2 sentences, never a bullet): role scope at a high level.\n"
+                "  BULLETS: Current role: 12-15. Secondary: 4-6. Older: 1-2.\n"
+                "  Active language: 'managed', 'built', 'drove'. NOT passive.\n\n"
                 "## Selected Achievements\n"
-                "Pull from the ACHIEVEMENTS section of the candidate profile. "
-                "Select the 5-8 strongest and most job-relevant quantified results. "
-                "Format: '- [Achievement with metric]'. Include DKK savings, % improvements, headcount, time savings. "
-                "Do NOT omit this section if ACHIEVEMENTS exist in the profile.\n\n"
-                "## Skills\n"
-                "Pull ONLY from the SKILLS section of the candidate profile (not from experience text). "
-                "Include professional domain competencies. Minimum 10 items. "
-                "Format: comma-separated list or bullets. "
-                "Highlight those matching this job.\n\n"
-                "## Systems\n"
-                "Pull ONLY from the SYSTEMS section of the candidate profile (not from experience text). "
-                "List all IT systems, platforms and technologies the candidate masters. "
-                "Include category where relevant: ERP / CAFM / Office / BI / Dev. "
-                "NEVER omit systems confirmed in the profile.\n\n"
-                "## Education\n"
-                "[Degree] – [Institution] | [YYYY] – [YYYY]\n"
-                "This section MUST always be included. Pull from the EDUCATION section in profile. "
-                "No education found: write '[Education not provided]' — never omit this section.\n\n"
-                "## Certifications\n"
-                "Pull from the CERTIFICATIONS section of the candidate profile. "
-                "Include AMU courses, leadership training, professional certifications, volunteer training and licences. "
-                "Format: '- [Certificate/course] – [Provider] | [Year]'. "
-                "NEVER omit certifications confirmed in the profile.\n\n"
-                "## Languages\n"
-                "Pull from the LANGUAGES section of the candidate profile. "
-                "List all languages with level (native, fluent, working level).\n\n"
-                "COMPLETENESS RULES (mandatory — all eight):\n"
-                "1. FULL CAREER HISTORY: Include ALL positions from the profile — never truncate.\n"
-                "   Older roles: 1-2 bullets suffice, but the role MUST appear.\n"
-                "2. EDUCATION ALWAYS: Pull from EDUCATION in snapshot. Never write 'not provided'\n"
-                "   if education exists anywhere in the system.\n"
-                "3. ACHIEVEMENTS SEPARATE: Quantified results belong in 'Selected Achievements' —\n"
-                "   not only as bullets within experience text.\n"
-                "4. SYSTEMS SEPARATE: Systems and IT platforms belong in 'Systems' —\n"
-                "   not only buried in experience bullets.\n"
-                "5. ACTIVE LANGUAGE:\n"
-                "   WRONG: 'supported management of partnerships'\n"
-                "   RIGHT:  'managed strategic partnerships'\n"
-                "   WRONG: 'contributed to savings'\n"
-                "   RIGHT:  'reduced costs by 5+ million DKK'\n"
-                "   Always use the strongest active verb that can be verified.\n"
-                "6. NO DUPLICATES: Skills and systems must not be repeated verbatim in experience bullets.\n"
-                "7. CONTACT ONCE: Name and contact appear in the header only — no Contact section in body text.\n"
-                "8. LINKEDIN URL: Always display cleaned URL without https://www. prefix.\n\n"
-                "PRE-PROCESSED DATA — MANDATORY USE:\n"
-                "The user message contains a block marked '=== PRE-PROCESSED DATA ==='. "
-                "This block contains EDUCATION and SKILLS/SYSTEMS pulled directly from the database. "
-                "You MUST use this data as the basis for the respective sections.\n"
-                "EDUCATION RULE (non-negotiable):\n"
-                "- The ## Education section MUST ALWAYS be present in output.\n"
-                "- Copy content from the EDUCATION block in the pre-processed data.\n"
-                "- NEVER write 'not provided', 'unknown' or skip this section.\n"
-                "- If pre-processed data shows 'Uddannelsesoplysninger ikke registreret': "
-                "  write 'Education not registered' — but NEVER an empty section.\n"
-                "SKILLS RULE (non-negotiable):\n"
-                "- The ## Skills section MUST ALWAYS contain minimum 8 items.\n"
-                "- Use the SKILLS list from pre-processed data as your starting point.\n"
-                "- Rank job-relevant skills first.\n"
-                "- Never output fewer than 8 items — supplement with skills inferred from job titles.\n"
-                "SYSTEMS RULE (non-negotiable):\n"
-                "- The ## Systems section MUST include at minimum the systems from the SYSTEMS list.\n"
-                "- Add systems from experience bullets if relevant, but preserve the listed ones.\n\n"
+                "Pull from ACHIEVEMENTS in candidate profile. 5-8 strongest quantified results. "
+                "Omit section if no achievements are documented.\n\n"
                 "RULES:\n"
-                "- Use ONLY the exact dates from the candidate profile. NEVER invent dates.\n"
-                "- Current employer start year MUST come from profile — check snapshot.\n"
-                "- If start year unknown: use 'approx. [estimated year]'. NEVER write '[year unknown]'.\n"
-                "- If end year is current: write 'present'.\n"
-                "- Adapt to the candidate's career breadth — NEVER truncate career history.\n"
-                "- Highlight experience and skills matching this specific job.\n"
-                "- ESG: if candidate has ESG experience, specify Scope category and exact role.\n"
-                "- Do NOT use **, *, or other markdown symbols — only ## for section headers and - for bullets.\n"
-                "- NEVER output '---' as a text separator.\n"
-                "- Do NOT write a name/header at the top — it is added automatically from the profile."
+                "- Use ONLY exact dates from the candidate profile. NEVER invent dates.\n"
+                "- Current role end = 'present'.\n"
+                "- Do NOT use **, * or other markdown symbols.\n"
+                "- NEVER output '---' as a separator.\n"
+                "- Do NOT write name/header at top — added automatically."
             )
             user_msg = (
                 f"Requirements:\n{req_text}\n\nJob Description:\n{job_description}\n\n"
-                f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}\n\n"
-                f"=== PRE-PROCESSED DATA (USE THESE DIRECTLY — NO REWRITING) ===\n"
-                f"{education_block}\n\n"
-                f"{skills_block}\n"
-                f"=== END PRE-PROCESSED DATA ==="
+                f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}"
             )
 
         llm = LiteLLMProvider(self.user_id)
@@ -491,9 +316,9 @@ class CVAgent(BaseAgent):
             self.name,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
             temperature=0.5,
-            max_tokens=3500,
+            max_tokens=3000,
         )
-        content = response.choices[0].message.content or ""
+        cv_text = response.choices[0].message.content or ""
         ud = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
         usage = AgentUsage(
             prompt_tokens=getattr(ud, "prompt_tokens", 0),
@@ -501,7 +326,18 @@ class CVAgent(BaseAgent):
             total_tokens=getattr(ud, "total_tokens", 0),
             model=getattr(response, "model", "unknown"),
         )
-        return AgentResult(content=content, usage=usage)
+
+        # Assemble structured content — education/skills/systems are hardcoded from DB
+        structured = {
+            "_structured_cv_v2": True,
+            "cv_text": cv_text,
+            "education": education_list,
+            "competencies": skills_data.get("competencies", []),
+            "systems": skills_data.get("systems", []),
+            "languages": languages_list,
+            "language": language,
+        }
+        return AgentResult(content=_json.dumps(structured, ensure_ascii=False), usage=usage)
 
     async def run(self, input_data: dict) -> AgentResult:
         raw_text = input_data.get("raw_text", "")
@@ -656,66 +492,48 @@ class CVAgent(BaseAgent):
             })
         return result
 
-    async def _build_education_section(self, cv_text: str, snapshot: dict) -> str:
+    def _build_structured_education(self, snapshot: dict) -> list[dict]:
         """
-        Build education string from all available sources.
-        ALWAYS returns a non-empty string with at least a placeholder.
-        Priority: snapshot.education → cv_text regex → certifications → leadership.
+        Build structured education list from snapshot.
+        Returns list of {degree, institution, years} dicts.
+        Used by generate() — result is hardcoded in PDF, never goes through LLM.
         """
-        parts: list[str] = []
+        result: list[dict] = []
 
-        # Source 1: snapshot.education (from cv_educations table — highest priority)
+        # Source 1: cv_educations table (highest priority)
         for e in (snapshot.get("education") or []):
             degree = (e.get("degree") or "").strip()
             institution = (e.get("institution") or "").strip()
             start = (e.get("period_start") or "")[:4]
             end = (e.get("period_end") or "")[:4]
-            period = f"{start}-{end}" if start and end else (start or end or "")
-            entry = f"{degree} – {institution}" if degree and institution else (degree or institution)
-            if period:
-                entry += f" | {period}"
-            if entry.strip(" –|"):
-                parts.append(entry)
+            years = f"{start}–{end}" if start and end else (start or end or "")
+            if degree or institution:
+                result.append({"degree": degree, "institution": institution, "years": years})
 
-        # Source 2: regex extract from raw cv_text if snapshot empty
-        if not parts and cv_text:
-            edu_match = re.search(
-                r"(?:uddannelse|education|bachelor|master|kandidat|diplom|cand\.|hd |hd\.|mba|ph\.?d)"
-                r"[^\n]*(?:\n[ \t]*[^\n#\-]{10,100}){0,3}",
-                cv_text, re.IGNORECASE,
-            )
-            if edu_match:
-                parts.append(f"(fra CV): {edu_match.group(0)[:200].strip()}")
-
-        # Source 3: certifications (AMU, lederuddannelse, licenser) always shown under education
+        # Source 2: certifications appear under education in left column
         for c in (snapshot.get("certifications") or []):
             name = (c.get("name") or "").strip()
             issuer = (c.get("issuer") or "").strip()
             year = (c.get("issued_at") or "")[:4]
             if not name:
                 continue
-            entry = name
-            if issuer:
-                entry += f" – {issuer}"
-            if year:
-                entry += f" | {year}"
-            parts.append(entry)
+            result.append({"degree": name, "institution": issuer, "years": year})
 
-        # Source 4: leadership roles with formal titles
-        for l in (snapshot.get("leadership") or []):
-            title = (l.get("title") or "").strip()
-            start = (l.get("period_start") or "")[:4]
-            end = (l.get("period_end") or "")[:4]
-            period = f"{start}-{end}" if start and end else ""
-            if not title:
-                continue
-            entry = title + (f" | {period}" if period else "")
-            parts.append(entry)
+        return result
 
-        if not parts:
+    async def _build_education_section(self, cv_text: str, snapshot: dict) -> str:
+        """Legacy text builder — kept for backward compat. Use _build_structured_education() instead."""
+        items = self._build_structured_education(snapshot)
+        if not items:
             return "UDDANNELSE:\n  - Uddannelsesoplysninger ikke registreret"
-
-        return "UDDANNELSE:\n" + "\n".join(f"  - {p}" for p in parts)
+        lines = []
+        for e in items:
+            entry = f"{e['degree']} – {e['institution']}" if e.get("degree") and e.get("institution") else (e.get("degree") or e.get("institution") or "")
+            if e.get("years"):
+                entry += f" | {e['years']}"
+            if entry.strip(" –|"):
+                lines.append(entry)
+        return "UDDANNELSE:\n" + "\n".join(f"  - {l}" for l in lines)
 
     def _infer_skills_from_experience(self, recent_jobs: list) -> list[str]:
         """Infer generic skills from job titles and descriptions."""
@@ -755,37 +573,35 @@ class CVAgent(BaseAgent):
         "sql", "powerpoint", "power query", "microsoft", "m365", "google",
     }
 
-    async def _build_skills_section(self, cv_text: str, snapshot: dict, job: dict) -> str:
+    def _build_structured_skills(self, snapshot: dict, job: dict) -> dict:
         """
-        Build ranked skills + systems from snapshot.
-        snapshot.skills is a list of {name, level, category} objects.
-        snapshot.systems is a list of {name, category, proficiency} objects.
-        ALWAYS returns at minimum 8 competencies.
+        Build structured skills + systems from snapshot.
+        Returns {"competencies": [...], "systems": [...]}.
+        Used by generate() — result is hardcoded in PDF, never goes through LLM.
+        Always returns minimum 8 competencies.
         """
-        # Source 1: confirmed skills from cv_skills table
+        # Source 1: confirmed skills (non-language, non-technical)
         skills_raw: list[str] = [
             s.get("name", "").strip()
             for s in (snapshot.get("skills") or [])
             if s.get("name") and s.get("category") not in ("language",)
         ]
 
-        # Source 2: systems from cv_systems table (separate bucket)
+        # Source 2: systems from cv_systems table
         systems_raw: list[str] = [
             s.get("name", "").strip()
             for s in (snapshot.get("systems") or [])
             if s.get("name")
         ]
-        # Also pull systems from skills table (category=technical)
         for s in (snapshot.get("skills") or []):
             if s.get("category") == "technical" and s.get("name"):
                 nm = s["name"].strip()
                 if nm not in systems_raw:
                     systems_raw.append(nm)
 
-        # Source 3: infer from experience titles
+        # Source 3: infer from experience titles as fallback
         inferred = self._infer_skills_from_experience(snapshot.get("experience") or [])
 
-        # Merge: competencies first, then inferred as fallback
         seen_lower: set[str] = set()
         competencies: list[str] = []
         systems: list[str] = []
@@ -794,7 +610,6 @@ class CVAgent(BaseAgent):
             sl = s.lower()
             if sl not in seen_lower:
                 seen_lower.add(sl)
-                # Route: system keywords go to systems bucket
                 if any(kw in sl for kw in self._SYSTEM_KW):
                     systems.append(s)
                 else:
@@ -812,7 +627,6 @@ class CVAgent(BaseAgent):
                 seen_lower.add(sl)
                 competencies.append(s)
 
-        # Rank by job relevance
         job_text = " ".join([
             job.get("title", ""),
             job.get("description", ""),
@@ -822,7 +636,6 @@ class CVAgent(BaseAgent):
         competencies = self._rank_skills_by_relevance(competencies, job_keywords)
         systems      = self._rank_skills_by_relevance(systems, job_keywords)
 
-        # Fallback: ensure minimum 8 competencies
         if len(competencies) < 8:
             fallback_da = [
                 "Procesoptimering", "Stakeholder Management", "Projektkoordinering",
@@ -836,9 +649,14 @@ class CVAgent(BaseAgent):
                     competencies.append(fb)
                     seen_lower.add(fb.lower())
 
+        return {"competencies": competencies[:15], "systems": systems[:10]}
+
+    async def _build_skills_section(self, cv_text: str, snapshot: dict, job: dict) -> str:
+        """Legacy text builder — kept for backward compat. Use _build_structured_skills() instead."""
+        data = self._build_structured_skills(snapshot, job)
         lines: list[str] = []
-        if competencies:
-            lines.append("KOMPETENCER: " + ", ".join(competencies[:15]))
-        if systems:
-            lines.append("SYSTEMER: " + ", ".join(systems[:10]))
+        if data["competencies"]:
+            lines.append("KOMPETENCER: " + ", ".join(data["competencies"]))
+        if data["systems"]:
+            lines.append("SYSTEMER: " + ", ".join(data["systems"]))
         return "\n".join(lines) if lines else "KOMPETENCER: Kompetencer opdateres løbende"

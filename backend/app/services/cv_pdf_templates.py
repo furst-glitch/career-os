@@ -281,6 +281,105 @@ class NordicExecutiveTemplate:
         contact.append({"type": "SPACING", "mm": 3})
         return contact + left_blocks
 
+    def _make_structured_sidebar(self, c: dict, cv_content: dict) -> list[dict]:
+        """
+        Build left column from structured cv_content dict.
+        Education, competencies, systems, languages are ALWAYS present — never from LLM.
+        """
+        lang = cv_content.get("language", "da")
+        da = lang == "da"
+        blocks: list[dict] = []
+
+        # Contact — always first
+        blocks.append({"type": "SECTION_HEADER", "text": "KONTAKT"})
+        for val in [c.get("email"), c.get("phone"), c.get("location")]:
+            if val:
+                blocks.append({"type": "BODY_TEXT", "text": _s(val)})
+        li = _s(clean_display_url(c.get("linkedin") or c.get("linkedin_url") or ""))
+        if li:
+            blocks.append({"type": "BODY_TEXT", "text": li})
+        blocks.append({"type": "SPACING", "mm": 3})
+
+        # Competencies — hardcoded from snapshot, always at least 8
+        competencies = cv_content.get("competencies") or []
+        blocks.append({"type": "SECTION_HEADER", "text": "KERNEKOMPETENCER" if da else "COMPETENCIES"})
+        if competencies:
+            for skill in competencies[:15]:
+                if skill:
+                    blocks.append({"type": "BULLET", "text": _s(skill)})
+        else:
+            blocks.append({"type": "BODY_TEXT", "text": "-"})
+
+        # Systems — hardcoded from snapshot
+        systems = cv_content.get("systems") or []
+        if systems:
+            blocks.append({"type": "SECTION_HEADER", "text": "SYSTEMER" if da else "SYSTEMS"})
+            for system in systems[:10]:
+                if system:
+                    blocks.append({"type": "BULLET", "text": _s(system)})
+
+        # Education — hardcoded from snapshot, always present
+        blocks.append({"type": "SECTION_HEADER", "text": "UDDANNELSE" if da else "EDUCATION"})
+        education = cv_content.get("education") or []
+        if education:
+            for edu in education:
+                degree = _s(edu.get("degree") or "")
+                institution = _s(edu.get("institution") or "")
+                years = _s(edu.get("years") or "")
+                if degree:
+                    blocks.append({"type": "BODY_TEXT", "text": degree})
+                sub = "  ·  ".join(filter(None, [institution, years]))
+                if sub:
+                    blocks.append({"type": "BODY_TEXT", "text": sub})
+                blocks.append({"type": "SPACING", "mm": 2})
+        else:
+            blocks.append({"type": "BODY_TEXT", "text": "Uddannelsesoplysninger ikke registreret" if da else "Education not registered"})
+
+        # Languages — from snapshot
+        languages = cv_content.get("languages") or []
+        if languages:
+            blocks.append({"type": "SECTION_HEADER", "text": "SPROG" if da else "LANGUAGES"})
+            for lang_entry in languages:
+                name_l = _s(lang_entry.get("language") or lang_entry.get("name") or "")
+                level = _s(lang_entry.get("level") or "")
+                text = f"{name_l} - {level}" if level else name_l
+                if text.strip():
+                    blocks.append({"type": "BODY_TEXT", "text": text})
+
+        return blocks
+
+    def render_structured(self, cv_content: dict, candidate: dict) -> bytes:
+        """
+        Render from structured cv_content dict.
+        Left column: education, competencies, systems, languages — ALL from snapshot data.
+        Right column: cv_text (profile + experience from LLM).
+        This guarantees left column sections are NEVER missing.
+        """
+        from fpdf import FPDF
+        pdf = FPDF()
+        pdf.set_margins(0, 0, 0)
+        pdf.set_auto_page_break(auto=False)
+        pdf.add_page()
+
+        self._draw_bg(pdf)
+        self._draw_header(pdf, candidate)
+        self._draw_footer(pdf, candidate)
+
+        # Left: structured sidebar from snapshot data — never from LLM
+        sidebar = self._make_structured_sidebar(candidate, cv_content)
+        self._render_left(pdf, sidebar)
+
+        # Right: LLM-generated text (profile + experience only)
+        cv_text = cv_content.get("cv_text", "")
+        right_blocks = parse_cv_text(cv_text)
+        # Filter out any left-section blocks the LLM may have accidentally written
+        right_blocks = [b for b in right_blocks if not (
+            b["type"] == "SECTION_HEADER" and _is_left_section(b["text"])
+        )]
+        self._render_right(pdf, right_blocks)
+
+        return bytes(pdf.output())
+
     def _render_left(self, pdf, blocks: list[dict]) -> None:
         x = self.LP
         w = self.CW_L
@@ -828,6 +927,73 @@ GENERATED_CV_TEMPLATES: dict[str, type] = {
     "minimal_nordic":     MinimalNordicTemplate,
     "bold_impact":        BoldImpactTemplate,
 }
+
+
+def _reconstruct_text_from_structured(cv_content: dict) -> str:
+    """
+    Fallback: convert structured cv_content dict back to text for templates
+    that don't implement render_structured(). Appends hardcoded sections as text.
+    """
+    parts = [cv_content.get("cv_text", "")]
+    lang = cv_content.get("language", "da")
+    da = lang == "da"
+
+    competencies = cv_content.get("competencies") or []
+    if competencies:
+        parts.append(f"\n## {'Kompetencer' if da else 'Skills'}")
+        parts.append(", ".join(competencies))
+
+    systems = cv_content.get("systems") or []
+    if systems:
+        parts.append(f"\n## {'Systemer' if da else 'Systems'}")
+        parts.append(", ".join(systems))
+
+    education = cv_content.get("education") or []
+    if education:
+        parts.append(f"\n## {'Uddannelse' if da else 'Education'}")
+        for edu in education:
+            degree = edu.get("degree") or ""
+            institution = edu.get("institution") or ""
+            years = edu.get("years") or ""
+            line = " - ".join(filter(None, [degree, institution]))
+            if years:
+                line += f" | {years}"
+            if line:
+                parts.append(f"- {line}")
+    else:
+        parts.append(f"\n## {'Uddannelse' if da else 'Education'}")
+        parts.append("- Uddannelsesoplysninger ikke registreret" if da else "- Education not registered")
+
+    languages = cv_content.get("languages") or []
+    if languages:
+        parts.append(f"\n## {'Sprog' if da else 'Languages'}")
+        for l in languages:
+            nm = l.get("language") or l.get("name") or ""
+            lv = l.get("level") or ""
+            parts.append(f"- {nm} - {lv}" if lv else f"- {nm}")
+
+    return "\n".join(parts)
+
+
+def render_structured_cv_pdf(
+    cv_content: dict,
+    candidate: dict,
+    template: str = "nordic_executive",
+) -> bytes:
+    """
+    Render from structured CV content dict.
+    Left column sections (education, competencies, systems, languages) come directly
+    from cv_content — never from LLM text. Guaranteed to always be present.
+    """
+    cls = GENERATED_CV_TEMPLATES.get(template, NordicExecutiveTemplate)
+    instance = cls()
+    if hasattr(instance, "render_structured"):
+        return instance.render_structured(cv_content, candidate)
+    # Fallback for templates without structured renderer
+    text = _reconstruct_text_from_structured(cv_content)
+    blocks = parse_cv_text(text)
+    blocks = _filter_blocks_for_template(blocks, template)
+    return instance.render(blocks, candidate)
 
 
 def render_generated_cv_pdf(

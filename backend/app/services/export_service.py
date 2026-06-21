@@ -443,7 +443,12 @@ def export_generated_cv_as_pdf(
     profile: dict,
     template: str = "nordic_executive",
 ) -> bytes:
-    from app.services.cv_pdf_templates import render_generated_cv_pdf, GENERATED_CV_TEMPLATES
+    import json as _json
+    from app.services.cv_pdf_templates import (
+        render_generated_cv_pdf,
+        render_structured_cv_pdf,
+        GENERATED_CV_TEMPLATES,
+    )
     candidate = {
         "name":     profile.get("full_name") or profile.get("display_name") or "",
         "title":    "",
@@ -454,11 +459,30 @@ def export_generated_cv_as_pdf(
         "linkedin": profile.get("linkedin_url") or "",
     }
     resolved = template if template in GENERATED_CV_TEMPLATES else "nordic_executive"
+
+    # Detect structured CV format (v2) — render via structured pipeline
+    try:
+        parsed = _json.loads(content)
+        if isinstance(parsed, dict) and parsed.get("_structured_cv_v2"):
+            return render_structured_cv_pdf(parsed, candidate, resolved)
+    except (ValueError, TypeError):
+        pass
+
+    # Legacy: plain text CV
     return render_generated_cv_pdf(content, candidate, resolved)
 
 
 def export_generated_cv_as_docx(title: str, content: str, profile: dict) -> bytes:
-    """DOCX-version af genereret CV med kontakthoved."""
+    """DOCX-version af genereret CV med kontakthoved. Håndterer både plain text og structured JSON."""
+    import json as _json
+    # Detect structured JSON — convert to text for DOCX rendering
+    try:
+        parsed = _json.loads(content)
+        if isinstance(parsed, dict) and parsed.get("_structured_cv_v2"):
+            from app.services.cv_pdf_templates import _reconstruct_text_from_structured
+            content = _reconstruct_text_from_structured(parsed)
+    except (ValueError, TypeError):
+        pass
     from docx import Document
     from docx.shared import Inches, Pt, RGBColor
 

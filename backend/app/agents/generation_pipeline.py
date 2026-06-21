@@ -49,23 +49,43 @@ class GenerationPipeline:
     async def generate_cv(self, input_data: dict, queue: asyncio.Queue | None = None) -> str:
         """
         CVAgent → ATSAgent → CriticAgent → DesignerAgent → ReviewBoardAgent
-        Returnerer endeligt CV som plaintext string.
+        Returnerer endeligt CV som JSON-string (structured_cv_v2) eller plaintext string.
+
+        CVAgent returnerer struktureret JSON: {"_structured_cv_v2": true, "cv_text": "...", ...}
+        Downstream agenter (ATS, Critic, ReviewBoard) modtager kun cv_text (plain text).
+        Strukturelle sektioner (education, competencies, systems, languages) bevares fra CV-agentens
+        snapshot-build og gensammensættes EFTER pipeline med den forbedrede cv_text.
         """
+        import json as _json
+
         uid, db = self.user_id, self.supabase
         job_ctx = self._job_ctx(input_data)
         lang = input_data.get("language", "da")
         template = input_data.get("template", "nordic_executive")
         da = lang == "da"
 
-        # Trin 1: CVAgent skriver udkast
+        # Trin 1: CVAgent skriver udkast (returnerer structured JSON eller plain text)
         await self._emit(queue, 5, "Udarbejder CV-udkast..." if da else "Drafting CV...")
-        draft = (await CVAgent(uid, db).generate(input_data)).content
+        draft_result = await CVAgent(uid, db).generate(input_data)
+        draft_raw = draft_result.content
 
-        # Trin 2: ATSAgent gennemgår udkastet
+        # Detektér struktureret JSON-format og udtræk cv_text til downstream agenter
+        draft_json: dict | None = None
+        try:
+            parsed = _json.loads(draft_raw)
+            if isinstance(parsed, dict) and parsed.get("_structured_cv_v2"):
+                draft_json = parsed
+                draft_text = parsed.get("cv_text", "")
+            else:
+                draft_text = draft_raw
+        except (ValueError, TypeError):
+            draft_text = draft_raw
+
+        # Trin 2: ATSAgent gennemgår kun cv_text (ikke JSON)
         await self._emit(queue, 30, "Analyserer ATS-nøgleord..." if da else "Analyzing ATS keywords...")
         ats_feedback = (await ATSAgent(uid, db).run({
             **job_ctx,
-            "draft": draft,
+            "draft": draft_text,
             "doc_type": "cv",
         })).content
 
@@ -86,21 +106,26 @@ class GenerationPipeline:
             "doc_type": "cv",
             "language": lang,
             "critic_feedback": improvements,
-            "draft": draft,
+            "draft": draft_text,
         })).content
 
         # Trin 5: ReviewBoardAgent omskriver til endeligt CV med stilguide
         await self._emit(queue, 78, "Omskriver til endeligt CV..." if da else "Rewriting to final CV...")
-        final = (await ReviewBoardAgent(uid, db).run({
+        final_text = (await ReviewBoardAgent(uid, db).run({
             "mode": "rewrite",
-            "draft": draft,
+            "draft": draft_text,
             "critic_feedback": improvements,
             "design_guide": design_guide,
             **job_ctx,
         })).content
 
         await self._emit(queue, 95, "Færdiggør..." if da else "Finishing...")
-        return final
+
+        # Gensammenbyg struktureret JSON med forbedret cv_text fra ReviewBoard
+        if draft_json is not None:
+            final_structured = {**draft_json, "cv_text": final_text}
+            return _json.dumps(final_structured, ensure_ascii=False)
+        return final_text
 
     # ── Application Pipeline ──────────────────────────────────────────────────
 
