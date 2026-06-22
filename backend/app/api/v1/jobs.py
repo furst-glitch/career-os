@@ -121,6 +121,7 @@ async def _extract_job_metadata(full_description: str, user_id: str) -> dict:
     Fejler stille — returnerer tomt dict ved fejl.
     """
     import json as _json
+
     from app.providers.litellm_provider import LiteLLMProvider
     if not full_description or len(full_description) < 100:
         return {}
@@ -544,6 +545,7 @@ async def job_interview(
     import json as _json
 
     from fastapi.responses import StreamingResponse
+
     from app.providers.litellm_provider import LiteLLMProvider
 
     svc = _svc(supabase)
