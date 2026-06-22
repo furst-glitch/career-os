@@ -444,10 +444,11 @@ def export_generated_cv_as_pdf(
     template: str = "nordic_executive",
 ) -> bytes:
     import json as _json
+
     from app.services.cv_pdf_templates import (
+        GENERATED_CV_TEMPLATES,
         render_generated_cv_pdf,
         render_structured_cv_pdf,
-        GENERATED_CV_TEMPLATES,
     )
     candidate = {
         "name":     profile.get("full_name") or profile.get("display_name") or "",

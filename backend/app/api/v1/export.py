@@ -189,7 +189,6 @@ async def export_document_docx(
     is_cv = doc_type in ("cv", "cv_version") or title.startswith("CV")
 
     if is_cv:
-        cv_tpl = profile.get("default_cv_template") or "nordic_executive"
         docx_bytes = export_generated_cv_as_docx(title, content, profile)
     else:
         resolved = template if template in APP_TEMPLATES else (

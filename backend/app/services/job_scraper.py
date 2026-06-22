@@ -295,7 +295,7 @@ def _extract_redirect_target(href: str) -> str | None:
       /cm/v2/jobclick?url=https://emply.com/...
     Disse er på jobindex.dk og ville ellers skippes.
     """
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import parse_qs, urlparse
     try:
         parsed = urlparse(href)
         params = parse_qs(parsed.query)

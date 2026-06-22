@@ -1,0 +1,12 @@
+target-version = "py312"
+line-length = 160
+
+[lint]
+select = ["E", "F", "I", "W"]
+ignore = [
+  "E501",  # line too long — håndteres af formatteren, ikke linteren
+  "E701",  # multiple statements (colon) — bruges i template-kode
+  "E702",  # multiple statements (semikolon) — bruges i PDF-konstanter
+  "E741",  # ambiguous variable name — bruges i PDF/template-kode
+  "E402",  # module import not at top — bruges i main.py middleware-setup
+]

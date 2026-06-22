@@ -533,7 +533,7 @@ class CVAgent(BaseAgent):
                 entry += f" | {e['years']}"
             if entry.strip(" –|"):
                 lines.append(entry)
-        return "UDDANNELSE:\n" + "\n".join(f"  - {l}" for l in lines)
+        return "UDDANNELSE:\n" + "\n".join(f"  - {line}" for line in lines)
 
     def _infer_skills_from_experience(self, recent_jobs: list) -> list[str]:
         """Infer generic skills from job titles and descriptions."""
