@@ -1,10 +1,9 @@
 -- Migration 00040: AI Arbejdsliv & Løncoach
--- Tabeller til dokumentupload, analyseresultater og lønsamtalepakker.
--- Registrerer 8 nye agenter i agent_registry.
+-- Idempotent: bruger IF NOT EXISTS og DO-blokke til policies.
 
 -- ── Tabeller ─────────────────────────────────────────────────────────────────
 
-CREATE TABLE public.coach_documents (
+CREATE TABLE IF NOT EXISTS public.coach_documents (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid        REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     doc_type        text        NOT NULL
@@ -16,7 +15,7 @@ CREATE TABLE public.coach_documents (
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE public.coach_analyses (
+CREATE TABLE IF NOT EXISTS public.coach_analyses (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid        REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     analysis_type   text        NOT NULL,
@@ -28,7 +27,7 @@ CREATE TABLE public.coach_analyses (
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE public.salary_prep_sessions (
+CREATE TABLE IF NOT EXISTS public.salary_prep_sessions (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid        REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     messages        jsonb       NOT NULL DEFAULT '[]',
@@ -38,9 +37,18 @@ CREATE TABLE public.salary_prep_sessions (
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TRIGGER salary_prep_sessions_updated_at
-    BEFORE UPDATE ON public.salary_prep_sessions
-    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'salary_prep_sessions_updated_at'
+          AND tgrelid = 'public.salary_prep_sessions'::regclass
+    ) THEN
+        CREATE TRIGGER salary_prep_sessions_updated_at
+            BEFORE UPDATE ON public.salary_prep_sessions
+            FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+    END IF;
+END $$;
 
 -- ── RLS ──────────────────────────────────────────────────────────────────────
 
@@ -48,20 +56,40 @@ ALTER TABLE public.coach_documents      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.coach_analyses       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.salary_prep_sessions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "coach_documents: own"
-    ON public.coach_documents FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "coach_analyses: own"
-    ON public.coach_analyses FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "salary_prep_sessions: own"
-    ON public.salary_prep_sessions FOR ALL USING (auth.uid() = user_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'coach_documents' AND policyname = 'coach_documents: own'
+    ) THEN
+        CREATE POLICY "coach_documents: own"
+            ON public.coach_documents FOR ALL USING (auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'coach_analyses' AND policyname = 'coach_analyses: own'
+    ) THEN
+        CREATE POLICY "coach_analyses: own"
+            ON public.coach_analyses FOR ALL USING (auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'salary_prep_sessions' AND policyname = 'salary_prep_sessions: own'
+    ) THEN
+        CREATE POLICY "salary_prep_sessions: own"
+            ON public.salary_prep_sessions FOR ALL USING (auth.uid() = user_id);
+    END IF;
+END $$;
 
 -- ── Indexes ──────────────────────────────────────────────────────────────────
 
-CREATE INDEX idx_coach_documents_user
+CREATE INDEX IF NOT EXISTS idx_coach_documents_user
     ON public.coach_documents (user_id, created_at DESC);
-CREATE INDEX idx_coach_analyses_user_type
+CREATE INDEX IF NOT EXISTS idx_coach_analyses_user_type
     ON public.coach_analyses (user_id, analysis_type, created_at DESC);
-CREATE INDEX idx_salary_prep_user
+CREATE INDEX IF NOT EXISTS idx_salary_prep_user
     ON public.salary_prep_sessions (user_id, created_at DESC);
 
 -- ── Agent Registry ───────────────────────────────────────────────────────────
