@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, apiPut, apiDelete, apiStream } from "@/lib/api";
@@ -72,6 +72,177 @@ const STATUS_COLORS: Record<string, string> = {
   withdrawn: "bg-slate-100 text-slate-500",
   hired: "bg-emerald-100 text-emerald-700",
 };
+
+// ── Job Intake Interview Modal ────────────────────────────────────────────────
+
+interface ChatMsg {
+  role: "assistant" | "user";
+  content: string;
+  streaming?: boolean;
+}
+
+function JobInterviewModal({ job, onClose }: { job: Job; onClose: () => void }) {
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [input, setInput] = useState("");
+  const [initializing, setInitializing] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Hent første spørgsmål fra AI
+  useEffect(() => {
+    let cancelled = false;
+    setMessages([{ role: "assistant", content: "", streaming: true }]);
+    apiStream(
+      `/jobs/${job.id}/interview`,
+      { messages: [], extract: false },
+      (chunk) => {
+        if (cancelled) return;
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, content: m.content + chunk } : m
+        ));
+      },
+      () => {
+        if (cancelled) return;
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, streaming: false } : m
+        ));
+        setInitializing(false);
+      },
+      () => { if (!cancelled) setInitializing(false); },
+    ).catch(() => { if (!cancelled) setInitializing(false); });
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending || saving || saved) return;
+
+    const userMsg: ChatMsg = { role: "user", content: text };
+    const aiPlaceholder: ChatMsg = { role: "assistant", content: "", streaming: true };
+    setInput("");
+    setSending(true);
+    setMessages(prev => [...prev, userMsg, aiPlaceholder]);
+
+    const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+
+    await apiStream(
+      `/jobs/${job.id}/interview`,
+      { messages: history, extract: false },
+      (chunk) => {
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, content: m.content + chunk } : m
+        ));
+      },
+      () => {
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, streaming: false } : m
+        ));
+        setSending(false);
+      },
+      () => setSending(false),
+    ).catch(() => setSending(false));
+  }, [input, messages, sending, saving, saved, job.id]);
+
+  async function handleSaveClose() {
+    setSaving(true);
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    try {
+      await apiPost(`/jobs/${job.id}/interview`, { messages: history, extract: true });
+      setSaved(true);
+      setTimeout(onClose, 800);
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center">
+      <div className="flex h-[85vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-2xl sm:h-[70vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">AI-interview om jobbet</h2>
+            <p className="text-xs text-slate-400">{job.title} · {job.company}</p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6 6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                msg.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 text-slate-800"
+              }`}>
+                {msg.content || (msg.streaming ? (
+                  <span className="inline-flex gap-1">
+                    <span className="animate-bounce">·</span>
+                    <span className="animate-bounce [animation-delay:0.15s]">·</span>
+                    <span className="animate-bounce [animation-delay:0.3s]">·</span>
+                  </span>
+                ) : "")}
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        {saved ? (
+          <div className="border-t border-slate-100 px-5 py-4 text-center text-sm text-emerald-600 font-medium">
+            Gemt ✓
+          </div>
+        ) : (
+          <div className="border-t border-slate-100 px-5 py-3">
+            <div className="flex gap-2">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                placeholder="Skriv dit svar…"
+                disabled={initializing || sending || saving}
+                className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim() || initializing || sending || saving}
+                className="rounded-xl bg-blue-600 px-3 py-2 text-white hover:bg-blue-700 disabled:opacity-40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="m22 2-7 20-4-9-9-4 20-7z"/>
+                </svg>
+              </button>
+            </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                onClick={handleSaveClose}
+                disabled={saving || messages.length < 2}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                {saving ? "Gemmer…" : "Gem og luk"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Quick Generate Modal ──────────────────────────────────────────────────────
 
@@ -239,7 +410,7 @@ function QuickGenModal({ job, initialDocType = "cover_letter", onClose }: { job:
                   />
                 </div>
                 <p className="mt-3 text-center text-xs text-slate-400">
-                  Typisk 20-40 sekunder...
+                  Typisk 60-90 sekunder...
                 </p>
               </div>
             </div>
@@ -399,14 +570,19 @@ function StatusDropdown({ job, onStatusChange }: {
 function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel: () => void }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
 
   function upd(k: keyof FormState, v: string) {
     setForm(prev => ({ ...prev, [k]: v }));
   }
 
+  const hasDescription = form.description.trim().length >= 100;
+  const hasTitle = form.title.trim().length > 0;
+  const canSubmit = hasDescription || hasTitle;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.title.trim() || !form.company.trim()) return;
+    if (!canSubmit) return;
     setSaving(true);
     try {
       const payload = {
@@ -425,56 +601,92 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <F label="Jobtitel *">
-          <input className={I} value={form.title} onChange={e => upd("title", e.target.value)} placeholder="Senior Developer" required />
-        </F>
-        <F label="Virksomhed *">
-          <input className={I} value={form.company} onChange={e => upd("company", e.target.value)} placeholder="Acme ApS" required />
-        </F>
+      {/* Primær input: jobopslaget */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-slate-600">
+          Jobopslag
+          <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-blue-600 font-normal">
+            AI udtrækker stilling, firma og deadline automatisk
+          </span>
+        </label>
+        <textarea
+          className={`${I} min-h-36 resize-y leading-relaxed`}
+          rows={6}
+          value={form.description}
+          onChange={e => upd("description", e.target.value)}
+          placeholder="Indsæt hele jobopslaget her — AI læser stilling, firma, ansøgningsfrist og krav ud af teksten…"
+          autoFocus
+        />
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <F label="Lokation">
-          <input className={I} value={form.location} onChange={e => upd("location", e.target.value)} placeholder="København" />
-        </F>
-        <F label="Job URL">
-          <input className={I} type="url" value={form.url} onChange={e => upd("url", e.target.value)} placeholder="https://..." />
-        </F>
-      </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <F label="Ansættelsestype">
-          <select className={I} value={form.job_type} onChange={e => upd("job_type", e.target.value)}>
-            {Object.entries(JOB_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </F>
-        <F label="Remote">
-          <select className={I} value={form.remote_type} onChange={e => upd("remote_type", e.target.value)}>
-            {Object.entries(REMOTE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
-        </F>
-        <div className="grid grid-cols-2 gap-2">
-          <F label="Løn min">
-            <input className={I} type="number" value={form.salary_min} onChange={e => upd("salary_min", e.target.value)} placeholder="600000" />
-          </F>
-          <F label="Løn max">
-            <input className={I} type="number" value={form.salary_max} onChange={e => upd("salary_max", e.target.value)} placeholder="800000" />
-          </F>
-        </div>
-      </div>
-      <F label="Jobopslag / Beskrivelse">
-        <textarea className={I} rows={4} value={form.description} onChange={e => upd("description", e.target.value)} placeholder="Indsæt jobopslag her for bedre match score…" />
-      </F>
-      <F label="Krav (ét per linje)">
-        <textarea className={I} rows={3} value={form.requirements} onChange={e => upd("requirements", e.target.value)} placeholder="Python\nFastAPI\nLederskab" />
-      </F>
-      <F label="Private noter">
-        <textarea className={I} rows={2} value={form.notes} onChange={e => upd("notes", e.target.value)} placeholder="Interessant kultur, kend til CEO…" />
-      </F>
-      <div className="flex justify-end gap-3 border-t border-slate-100 pt-4">
-        <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">Annuller</button>
-        <button type="submit" disabled={saving} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60">
-          {saving ? "Gemmer…" : "Tilføj job"}
+
+      {/* Valgfri detaljer */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowOptional(v => !v)}
+          className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600"
+        >
+          <span>{showOptional ? "▾" : "▸"}</span>
+          {showOptional ? "Skjul detaljer" : "Tilføj detaljer manuelt (valgfrit)"}
         </button>
+
+        {showOptional && (
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <F label="Jobtitel">
+                <input className={I} value={form.title} onChange={e => upd("title", e.target.value)} placeholder="Senior Developer" />
+              </F>
+              <F label="Virksomhed">
+                <input className={I} value={form.company} onChange={e => upd("company", e.target.value)} placeholder="Acme ApS" />
+              </F>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <F label="Lokation">
+                <input className={I} value={form.location} onChange={e => upd("location", e.target.value)} placeholder="København" />
+              </F>
+              <F label="Job URL">
+                <input className={I} type="url" value={form.url} onChange={e => upd("url", e.target.value)} placeholder="https://..." />
+              </F>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <F label="Løn min">
+                <input className={I} type="number" value={form.salary_min} onChange={e => upd("salary_min", e.target.value)} placeholder="600000" />
+              </F>
+              <F label="Løn max">
+                <input className={I} type="number" value={form.salary_max} onChange={e => upd("salary_max", e.target.value)} placeholder="800000" />
+              </F>
+            </div>
+            <F label="Private noter">
+              <textarea className={I} rows={2} value={form.notes} onChange={e => upd("notes", e.target.value)} placeholder="Interessant kultur, kend til CEO…" />
+            </F>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+        <p className="text-xs text-slate-400">
+          {hasDescription
+            ? "AI analyserer opslaget og åbner interview-dialog"
+            : hasTitle
+            ? "Tilføj jobopslag for bedre match og AI-analyse"
+            : "Indsæt jobopslaget for at fortsætte"}
+        </p>
+        <div className="flex gap-3">
+          <button type="button" onClick={onCancel} className="rounded-lg px-4 py-2 text-sm text-slate-600 hover:bg-slate-100">
+            Annuller
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !canSubmit}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving
+              ? hasDescription && !hasTitle
+                ? "Analyserer opslag…"
+                : "Gemmer…"
+              : "Tilføj job"}
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -482,13 +694,14 @@ function AddJobForm({ onSave, onCancel }: { onSave: (job: Job) => void; onCancel
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
 
-function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onStatusChange }: {
+function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onStatusChange, onInterview }: {
   job: Job;
   onToggleSave: (id: string) => void;
   onDelete: (id: string) => void;
   onRefreshMatch: (id: string) => void;
   onQuickGen: (job: Job, docType: "cv" | "cover_letter") => void;
   onStatusChange: (jobId: string, pipelineId: string, status: string) => Promise<void>;
+  onInterview: (job: Job) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -564,6 +777,13 @@ function JobCard({ job, onToggleSave, onDelete, onRefreshMatch, onQuickGen, onSt
           className="flex-1 rounded-lg border border-indigo-200 bg-indigo-50 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 transition-colors"
         >
           Hurtig ansøgning
+        </button>
+        <button
+          onClick={() => onInterview(job)}
+          title="AI-interview om jobbet"
+          className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors"
+        >
+          ✦ AI
         </button>
         <StatusDropdown job={job} onStatusChange={onStatusChange} />
       </div>
@@ -698,6 +918,7 @@ export default function JobsPage() {
   const [view, setView] = useState<"list" | "kanban">("list");
   const [toast, setToast] = useState<string | null>(null);
   const [quickGenJob, setQuickGenJob] = useState<{ job: Job; docType: "cv" | "cover_letter" } | null>(null);
+  const [interviewJob, setInterviewJob] = useState<Job | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -718,7 +939,7 @@ export default function JobsPage() {
   function handleJobAdded(job: Job) {
     setJobs(prev => [job, ...prev]);
     setShowForm(false);
-    showToast("Job tilføjet — match score beregnet");
+    setInterviewJob(job);
   }
 
   async function handleToggleSave(id: string) {
@@ -861,6 +1082,7 @@ export default function JobsPage() {
               onRefreshMatch={handleRefreshMatch}
               onQuickGen={(j, dt) => setQuickGenJob({ job: j, docType: dt })}
               onStatusChange={handleStatusChange}
+              onInterview={setInterviewJob}
             />
           ))}
         </div>
@@ -873,6 +1095,16 @@ export default function JobsPage() {
           onClose={(refreshNeeded) => {
             setQuickGenJob(null);
             if (refreshNeeded) loadJobs();
+          }}
+        />
+      )}
+
+      {interviewJob && (
+        <JobInterviewModal
+          job={interviewJob}
+          onClose={() => {
+            setInterviewJob(null);
+            showToast("Job-noter opdateret ✓");
           }}
         />
       )}

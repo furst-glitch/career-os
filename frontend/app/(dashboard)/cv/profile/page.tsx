@@ -347,7 +347,11 @@ export default function ProfilePage() {
   }
 
   const count = (k: SectionKey) => data?.[k]?.length ?? 0;
-  const sScore = (k: SectionKey) => ((score?.sections as unknown) as Record<string, number>)?.[k] ?? 0;
+  const sScore = (k: SectionKey) => {
+    // API returns "education" but the section key is "educations" to match the data table
+    const apiKey = k === "educations" ? "education" : k;
+    return ((score?.sections as unknown) as Record<string, number>)?.[apiKey] ?? 0;
+  };
 
   if (loading) {
     return (

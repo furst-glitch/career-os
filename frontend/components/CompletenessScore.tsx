@@ -11,7 +11,9 @@ const SECTION_LABELS: Record<string, string> = {
   achievements: "Præstationer",
   projects: "Projekter",
   systems: "Systemer",
+  education: "Uddannelse",
   leadership: "Lederskab",
+  contact: "Kontakt",
   certifications: "Certifikater",
   skills: "Kompetencer",
 };
@@ -19,7 +21,7 @@ const SECTION_LABELS: Record<string, string> = {
 interface CompletenessScoreProps {
   compact?: boolean;
   onScoreLoad?: (score: ProfileScore) => void;
-  refreshKey?: number;
+  refreshKey?: string | number;
 }
 
 export function CompletenessScore({

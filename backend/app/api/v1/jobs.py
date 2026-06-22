@@ -67,10 +67,38 @@ async def create_job(
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
-    svc = _svc(supabase)
-    job = svc.create_job(user["id"], body)
+    # Hvis title mangler men der er en beskrivelse, udtrækker AI metadata
+    description = body.get("description") or ""
+    if not body.get("title", "").strip() and len(description) >= 100:
+        meta = await _extract_job_metadata(description, user["id"])
+        if meta.get("title"):
+            body["title"] = meta["title"]
+        if meta.get("company") and not body.get("company", "").strip():
+            body["company"] = meta["company"]
+        if meta.get("location") and not body.get("location"):
+            body["location"] = meta["location"]
+        if meta.get("job_type") in ("full_time", "part_time", "contract", "freelance", "internship"):
+            body.setdefault("job_type", meta["job_type"])
+        if meta.get("remote_type") in ("onsite", "hybrid", "remote"):
+            body.setdefault("remote_type", meta["remote_type"])
+        if meta.get("deadline"):
+            body["_extracted_deadline"] = meta["deadline"]
 
-    # Beregn og gem match score i baggrunden (fejler stille)
+    # Sæt fallback-titel hvis AI heller ikke fandt noget
+    if not body.get("title", "").strip():
+        body["title"] = "Indsat stillingsopslag"
+    if not body.get("company", "").strip():
+        body["company"] = "Ukendt virksomhed"
+
+    svc = _svc(supabase)
+    job = svc.create_job(user["id"], {k: v for k, v in body.items() if not k.startswith("_")})
+
+    # Gem deadline på pipeline-entry hvis udtrukket (oprettes af automation_service ved is_saved)
+    extracted_deadline = body.get("_extracted_deadline")
+    if extracted_deadline:
+        job["extracted_deadline"] = extracted_deadline
+
+    # Beregn og gem match score (fejler stille)
     try:
         snap = _snapshot(user["id"], supabase)
         if snap:
@@ -86,6 +114,52 @@ async def create_job(
 
 # ── Paste / Import ────────────────────────────────────────────────────────────
 
+async def _extract_job_metadata(full_description: str, user_id: str) -> dict:
+    """
+    Bruger LLM til at udtrække strukturerede metadata fra en jobannonce-tekst.
+    Returnerer dict med title, company, location, job_type, remote_type, deadline.
+    Fejler stille — returnerer tomt dict ved fejl.
+    """
+    import json as _json
+    from app.providers.litellm_provider import LiteLLMProvider
+    if not full_description or len(full_description) < 100:
+        return {}
+    try:
+        llm = LiteLLMProvider(user_id)
+        response = await llm.complete(
+            "cv_agent",  # brug generisk agent-konfiguration
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Du er en assistent der udtrækker metadata fra jobopslag. "
+                        "Returner KUN gyldig JSON med disse felter:\n"
+                        "  title: stillingsbetegnelse (string)\n"
+                        "  company: virksomhedens navn (string)\n"
+                        "  location: arbejdssted, by eller 'Remote' (string eller null)\n"
+                        "  job_type: 'full_time' | 'part_time' | 'contract' | 'freelance' | 'internship'\n"
+                        "  remote_type: 'onsite' | 'hybrid' | 'remote'\n"
+                        "  deadline: ansøgningsfrist i ISO-format YYYY-MM-DD (string eller null)\n"
+                        "Gæt aldrig — brug kun oplysninger der fremgår direkte af teksten. "
+                        "Returner null for felter du ikke kan finde."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Udtrjek metadata fra dette jobopslag:\n\n{full_description[:4000]}",
+                },
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0,
+            max_tokens=300,
+        )
+        raw = response.choices[0].message.content or "{}"
+        return _json.loads(raw)
+    except Exception as exc:
+        logger.warning("paste_job metadata extraction failed: %s", exc)
+        return {}
+
+
 @router.post("/paste", status_code=201)
 async def paste_job(
     body: dict,
@@ -94,15 +168,12 @@ async def paste_job(
 ):
     """
     Importér job ved at indsætte URL eller råtekst.
+    Titel, firma, lokation og deadline udtrækkes automatisk af AI — ingen manuel udfyldning nødvendig.
 
     Body:
-      url        — job-URL (optional): hentes og scrapes automatisk
-      text       — råtekst (optional): bruges direkte som full_description
-      title      — jobtitel (optional, bruges som fallback)
-      company    — virksomhed (optional)
-      location   — lokation (optional)
-      job_type   — "full_time" etc.
-      remote_type — "hybrid" etc.
+      url         — job-URL: hentes og scrapes automatisk
+      text        — råtekst: bruges direkte som full_description
+      (alle øvrige felter ignoreres — AI udtrækker dem fra indholdet)
 
     Returnerer det gemte job med match score, matched_skills og missing_requirements.
     """
@@ -116,11 +187,11 @@ async def paste_job(
 
     job_dict: dict = {
         "url": url or None,
-        "title": (body.get("title") or "").strip() or "Indsat jobopslag",
-        "company": (body.get("company") or "").strip() or "Ukendt",
-        "location": (body.get("location") or "").strip() or None,
-        "job_type": body.get("job_type", "full_time"),
-        "remote_type": body.get("remote_type", "hybrid"),
+        "title": "Analyserer...",
+        "company": "Ukendt",
+        "location": None,
+        "job_type": "full_time",
+        "remote_type": "hybrid",
         "source": "paste",
         "description": None,
         "full_description": text or None,
@@ -134,6 +205,28 @@ async def paste_job(
         except Exception as exc:
             logger.warning("paste_job scraping failed for %s: %s", url, exc)
 
+    # AI-udtræk af metadata fra den scrapede/indsatte tekst
+    full_text = job_dict.get("full_description") or ""
+    if full_text:
+        meta = await _extract_job_metadata(full_text, user["id"])
+        if meta.get("title"):
+            job_dict["title"] = meta["title"]
+        if meta.get("company"):
+            job_dict["company"] = meta["company"]
+        if meta.get("location"):
+            job_dict["location"] = meta["location"]
+        if meta.get("job_type") in ("full_time", "part_time", "contract", "freelance", "internship"):
+            job_dict["job_type"] = meta["job_type"]
+        if meta.get("remote_type") in ("onsite", "hybrid", "remote"):
+            job_dict["remote_type"] = meta["remote_type"]
+        # deadline gemmes som note indtil application_pipeline er oprettet
+        if meta.get("deadline"):
+            job_dict["_extracted_deadline"] = meta["deadline"]
+
+    # Fallback til "Indsat jobopslag" hvis AI ikke fandt en titel
+    if not job_dict["title"] or job_dict["title"] == "Analyserer...":
+        job_dict["title"] = "Indsat jobopslag"
+
     svc = _svc(supabase)
     snap = _snapshot(user["id"], supabase)
 
@@ -145,8 +238,8 @@ async def paste_job(
         except Exception as exc:
             logger.warning("paste_job match scoring failed: %s", exc)
 
-    # Save to DB
-    payload = {k: v for k, v in job_dict.items()}
+    # Save to DB (strip private underscore keys added during processing)
+    payload = {k: v for k, v in job_dict.items() if not k.startswith("_")}
     payload["is_saved"] = True
     job = svc.create_job(user["id"], payload)
 
@@ -160,6 +253,10 @@ async def paste_job(
             job["missing_requirements"] = match_result.get("missing_requirements", [])
         except Exception:
             pass
+
+    # Inkludér udtrukket deadline i svaret (til pipeline-oprettelse i frontend)
+    if job_dict.get("_extracted_deadline"):
+        job["extracted_deadline"] = job_dict["_extracted_deadline"]
 
     return job
 
@@ -411,6 +508,187 @@ async def quickgen(
 
     return StreamingResponse(
         process(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+# ── Job Intake Interview ──────────────────────────────────────────────────────
+
+class JobInterviewRequest(BaseModel):
+    messages: list[dict] = []
+    extract: bool = False
+
+
+@router.post("/{job_id}/interview")
+async def job_interview(
+    job_id: str,
+    body: JobInterviewRequest,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    Stateless AI-intake interview om et specifikt job.
+
+    messages=[]     → AI genererer første spørgsmål
+    messages=[...]  → AI svarer på seneste besked (historik sendes med)
+    extract=True    → udtrækker nøgleinfo og gemmer til job-noter (JSON response)
+
+    SSE events (extract=False):
+      data: {"type": "chunk", "content": "..."}
+      data: {"type": "done"}
+      data: {"type": "error", "content": "..."}
+      : ping
+    """
+    import asyncio
+    import json as _json
+
+    from fastapi.responses import StreamingResponse
+    from app.providers.litellm_provider import LiteLLMProvider
+
+    svc = _svc(supabase)
+    job = svc.get_job(job_id, user["id"])
+    if not job:
+        raise HTTPException(404, "Job ikke fundet")
+
+    title = job.get("title", "Stilling")
+    company = job.get("company", "Virksomhed")
+    description = job.get("full_description") or job.get("description") or ""
+
+    job_ctx = f"Stilling: **{title}** hos **{company}**"
+    if description:
+        job_ctx += f"\n\nJobbeskrivelse (uddrag):\n{description[:1500]}"
+
+    SYSTEM = (
+        "Du er en venlig AI-assistent der hjælper med at kortlægge et jobopslag.\n\n"
+        f"{job_ctx}\n\n"
+        "Din opgave er at stille præcise spørgsmål for at afdække op til 4 emner:\n"
+        "1. Ansøgningsfrist (hvis ukendt)\n"
+        "2. Hvad der tiltrækker kandidaten ved stillingen\n"
+        "3. Særlige krav eller fokuspunkter ud over opslaget\n"
+        "4. Kontaktperson hos virksomheden (hvis relevant)\n\n"
+        "Regler:\n"
+        "- Stil ét spørgsmål ad gangen — aldrig to på én gang\n"
+        "- Vær kort og naturlig, maks 2-3 sætninger\n"
+        "- Stil maks 4 spørgsmål i samtalen i alt\n"
+        "- Svar altid på dansk\n"
+        "- Afslut med en kortfattet bekræftelse når du har nok information"
+    )
+
+    if body.extract:
+        conversation = "\n".join(
+            f"{'Bruger' if m.get('role') == 'user' else 'AI'}: {m.get('content', '')}"
+            for m in body.messages
+            if m.get("role") in ("user", "assistant")
+        )
+        try:
+            llm = LiteLLMProvider(user["id"])
+            resp = await llm.complete(
+                "cv_agent",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Udtrk nøgleinfo fra denne jobsamtale som JSON med disse felter:\n"
+                            '  "deadline": "YYYY-MM-DD eller null",\n'
+                            '  "contact_person": "navn/titel eller null",\n'
+                            '  "motivation": "hvad tiltrækker kandidaten, maks 2 sætninger, eller null",\n'
+                            '  "special_requirements": "særlige krav/fokuspunkter, maks 2 sætninger, eller null"\n'
+                            "Brug KUN oplysninger fra samtalen. Returner KUN JSON."
+                        ),
+                    },
+                    {"role": "user", "content": f"Samtale:\n{conversation}"},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+                max_tokens=400,
+            )
+            extracted = _json.loads(resp.choices[0].message.content or "{}")
+        except Exception as exc:
+            logger.warning("job_interview extract failed: %s", exc)
+            extracted = {}
+
+        notes_parts = []
+        if extracted.get("motivation"):
+            notes_parts.append(f"Motivation: {extracted['motivation']}")
+        if extracted.get("special_requirements"):
+            notes_parts.append(f"Fokus: {extracted['special_requirements']}")
+        if extracted.get("contact_person"):
+            notes_parts.append(f"Kontakt: {extracted['contact_person']}")
+
+        if notes_parts:
+            existing = job.get("notes") or ""
+            new_note = "\n".join(notes_parts)
+            merged = (f"{existing.strip()}\n\n{new_note}".strip() if existing.strip() else new_note)
+            svc.update_job(job_id, user["id"], {"notes": merged})
+
+        deadline = extracted.get("deadline")
+        if deadline:
+            try:
+                rows = supabase.table("application_pipeline").select("id").eq("job_id", job_id).eq("user_id", user["id"]).limit(1).execute()
+                if rows.data:
+                    from app.services.application_service import ApplicationService
+                    ApplicationService(supabase).update_pipeline(
+                        user["id"], rows.data[0]["id"], {"deadline": deadline}
+                    )
+            except Exception as exc:
+                logger.warning("job_interview deadline save failed: %s", exc)
+
+        return {"saved": True, "deadline": deadline, "extracted": extracted}
+
+    # Streaming SSE-svar
+    async def event_stream():
+        queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+        async def producer():
+            try:
+                llm = LiteLLMProvider(user["id"])
+                messages = [{"role": "system", "content": SYSTEM}] + [
+                    {"role": m["role"], "content": m["content"]}
+                    for m in body.messages
+                    if m.get("role") in ("user", "assistant")
+                ]
+                resp = await llm.complete(
+                    "cv_agent", messages, stream=True, temperature=0.7, max_tokens=400,
+                )
+                async for chunk in resp:
+                    delta = chunk.choices[0].delta.content or ""
+                    if delta:
+                        await queue.put(("data", _json.dumps({"type": "chunk", "content": delta})))
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                try:
+                    await queue.put(("data", _json.dumps({"type": "error", "content": str(exc)})))
+                except Exception:
+                    pass
+            finally:
+                try:
+                    queue.put_nowait(("done", ""))
+                except asyncio.QueueFull:
+                    pass
+
+        task = asyncio.create_task(producer())
+        try:
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if kind == "done":
+                    yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                    break
+                yield f"data: {payload}\n\n"
+        finally:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    return StreamingResponse(
+        event_stream(),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

@@ -13,7 +13,7 @@ POST   /applications/{id}/generate      - Generer cover letter med AI
 GET    /applications/documents/{doc_id} - Hent dokument-indhold
 PUT    /applications/documents/{doc_id} - Rediger dokument-indhold
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.agents.generation_pipeline import GenerationPipeline
@@ -131,6 +131,7 @@ async def get_application(
 async def update_application(
     pipeline_id: str,
     body: UpdatePipelineRequest,
+    background_tasks: BackgroundTasks,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
@@ -153,11 +154,9 @@ async def update_application(
 
     # Auto-generer interviewforberedelse ved samtale 1 og 2
     if body.current_status in INTERVIEW_STATUSES:
-        import asyncio
-
         from app.services.interview_prep_service import generate_interview_prep
-        asyncio.create_task(
-            generate_interview_prep(user["id"], pipeline_id, body.current_status, supabase)
+        background_tasks.add_task(
+            generate_interview_prep, user["id"], pipeline_id, body.current_status, supabase
         )
 
     return updated
@@ -336,6 +335,7 @@ async def generate_cover_letter(
             title=title,
             content=result.content,  # fuld JSON gemmes til PDF-export
             language=lang,
+            doc_type=body.doc_type,
         )
 
         # CV returnerer struktureret JSON — send kun cv_text til visning
