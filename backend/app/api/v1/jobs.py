@@ -531,9 +531,9 @@ async def job_interview(
     """
     Stateless AI-intake interview om et specifikt job.
 
-    messages=[]     → AI genererer første spørgsmål
+    messages=[]     → AI genererer første spørgsmål baseret på gap-analyse
     messages=[...]  → AI svarer på seneste besked (historik sendes med)
-    extract=True    → udtrækker nøgleinfo og gemmer til job-noter (JSON response)
+    extract=True    → udtrækker nøgleinfo, gemmer til job-noter OG career_memories
 
     SSE events (extract=False):
       data: {"type": "chunk", "content": "..."}
@@ -547,6 +547,7 @@ async def job_interview(
     from fastapi.responses import StreamingResponse
 
     from app.providers.litellm_provider import LiteLLMProvider
+    from app.services.memory_snapshot_service import MemorySnapshotService
 
     svc = _svc(supabase)
     job = svc.get_job(job_id, user["id"])
@@ -556,30 +557,50 @@ async def job_interview(
     title = job.get("title", "Stilling")
     company = job.get("company", "Virksomhed")
     description = job.get("full_description") or job.get("description") or ""
+    requirements: list = job.get("requirements") or []
 
-    job_ctx = f"Stilling: **{title}** hos **{company}**"
+    # ── Byg job-kontekst ──────────────────────────────────────────────────────
+    job_ctx = f"STILLING: {title} hos {company}"
+    if requirements:
+        job_ctx += "\nKRAV FRA OPSLAGET:\n" + "\n".join(f"  - {r}" for r in requirements[:15])
     if description:
-        job_ctx += f"\n\nJobbeskrivelse (uddrag):\n{description[:1500]}"
+        job_ctx += f"\nJOBBESKRIVELSE:\n{description[:2000]}"
+
+    # ── Hent kandidatprofil til gap-analyse ───────────────────────────────────
+    try:
+        snap = MemorySnapshotService(supabase).snapshot(user["id"])
+        candidate_summary = snap.get("text_summary") or ""
+    except Exception:
+        snap = {}
+        candidate_summary = ""
+
+    # Byg kort profilsummary til systemprompten
+    profile_ctx = ""
+    if candidate_summary:
+        profile_ctx = f"\nKANDIDATENS PROFIL (uddrag):\n{candidate_summary[:1200]}"
 
     SYSTEM = (
-        "Du er en venlig AI-assistent der hjælper med at kortlægge et jobopslag.\n\n"
-        f"{job_ctx}\n\n"
-        "Din opgave er at stille præcise spørgsmål for at afdække op til 4 emner:\n"
-        "1. Ansøgningsfrist (hvis ukendt)\n"
-        "2. Hvad der tiltrækker kandidaten ved stillingen\n"
-        "3. Særlige krav eller fokuspunkter ud over opslaget\n"
-        "4. Kontaktperson hos virksomheden (hvis relevant)\n\n"
+        "Du er en erfaren karrierecoach der forbereder en kandidat til at søge et specifikt job.\n\n"
+        f"{job_ctx}"
+        f"{profile_ctx}\n\n"
+        "Din opgave:\n"
+        "1. Sammenlign jobkravene med kandidatens profil og identificer 1-2 konkrete huller eller\n"
+        "   styrker der ikke fremgår tydeligt af profilen\n"
+        "2. Stil målrettede spørgsmål baseret på disse huller — fx 'Jobbet kræver X, men det fremgår\n"
+        "   ikke af din profil — hvordan dækker du det?'\n"
+        "3. Spørg om ansøgningsfrist og motivation\n"
+        "4. Spørg om kontaktperson hvis det er relevant\n\n"
         "Regler:\n"
         "- Stil ét spørgsmål ad gangen — aldrig to på én gang\n"
-        "- Vær kort og naturlig, maks 2-3 sætninger\n"
-        "- Stil maks 4 spørgsmål i samtalen i alt\n"
+        "- Vær konkret og direkte, maksimalt 3 sætninger per svar\n"
+        "- Stil maksimalt 4-5 spørgsmål i alt\n"
         "- Svar altid på dansk\n"
-        "- Afslut med en kortfattet bekræftelse når du har nok information"
+        "- Afslut med en kort opsummering af hvad du vil gemme"
     )
 
     if body.extract:
         conversation = "\n".join(
-            f"{'Bruger' if m.get('role') == 'user' else 'AI'}: {m.get('content', '')}"
+            f"{'Kandidat' if m.get('role') == 'user' else 'Coach'}: {m.get('content', '')}"
             for m in body.messages
             if m.get("role") in ("user", "assistant")
         )
@@ -591,30 +612,35 @@ async def job_interview(
                     {
                         "role": "system",
                         "content": (
-                            "Udtrk nøgleinfo fra denne jobsamtale som JSON med disse felter:\n"
+                            f"Du analyserer en karrierecoach-samtale om stillingen '{title}' hos '{company}'.\n"
+                            "Returner KUN JSON med disse felter:\n"
                             '  "deadline": "YYYY-MM-DD eller null",\n'
                             '  "contact_person": "navn/titel eller null",\n'
-                            '  "motivation": "hvad tiltrækker kandidaten, maks 2 sætninger, eller null",\n'
-                            '  "special_requirements": "særlige krav/fokuspunkter, maks 2 sætninger, eller null"\n'
+                            '  "motivation": "kandidatens motivation for stillingen, maks 2 sætninger, eller null",\n'
+                            '  "gap_response": "hvordan kandidaten adresserer kompetencegab, maks 2 sætninger, eller null",\n'
+                            '  "key_selling_points": "kandidatens stærkeste argumenter for stillingen, maks 2 sætninger, eller null"\n'
                             "Brug KUN oplysninger fra samtalen. Returner KUN JSON."
                         ),
                     },
-                    {"role": "user", "content": f"Samtale:\n{conversation}"},
+                    {"role": "user", "content": f"Samtale om '{title}' hos '{company}':\n\n{conversation}"},
                 ],
                 response_format={"type": "json_object"},
                 temperature=0.0,
-                max_tokens=400,
+                max_tokens=500,
             )
             extracted = _json.loads(resp.choices[0].message.content or "{}")
         except Exception as exc:
             logger.warning("job_interview extract failed: %s", exc)
             extracted = {}
 
+        # ── Gem til job-noter ─────────────────────────────────────────────────
         notes_parts = []
         if extracted.get("motivation"):
             notes_parts.append(f"Motivation: {extracted['motivation']}")
-        if extracted.get("special_requirements"):
-            notes_parts.append(f"Fokus: {extracted['special_requirements']}")
+        if extracted.get("gap_response"):
+            notes_parts.append(f"Gap-svar: {extracted['gap_response']}")
+        if extracted.get("key_selling_points"):
+            notes_parts.append(f"Salgspunkter: {extracted['key_selling_points']}")
         if extracted.get("contact_person"):
             notes_parts.append(f"Kontakt: {extracted['contact_person']}")
 
@@ -624,6 +650,33 @@ async def job_interview(
             merged = (f"{existing.strip()}\n\n{new_note}".strip() if existing.strip() else new_note)
             svc.update_job(job_id, user["id"], {"notes": merged})
 
+        # ── Gem til career_memories (master CV-kontekst) ──────────────────────
+        # Indsigterne fra jobinterviewet gemmes i career memory så de er
+        # tilgængelige for CV- og ansøgningsgeneratorer via memory snapshot.
+        try:
+            from app.services.memory_service import MemoryService
+            mem_svc = MemoryService(supabase)
+            memory_parts = [f"Job-interview indsigt — {title} hos {company}:"]
+            if extracted.get("motivation"):
+                memory_parts.append(f"Motivation: {extracted['motivation']}")
+            if extracted.get("gap_response"):
+                memory_parts.append(f"Kompetencegab-svar: {extracted['gap_response']}")
+            if extracted.get("key_selling_points"):
+                memory_parts.append(f"Stærkeste argumenter: {extracted['key_selling_points']}")
+            if len(memory_parts) > 1:
+                mem_svc.create_memory(
+                    user_id=user["id"],
+                    content="\n".join(memory_parts),
+                    memory_type="career_note",
+                    source="ai_extracted",
+                    relevance_score=0.8,
+                )
+                # Invalider snapshot-cache så næste CV-generering bruger de nye indsigter
+                MemorySnapshotService(supabase).invalidate(user["id"])
+        except Exception as exc:
+            logger.warning("job_interview memory save failed: %s", exc)
+
+        # ── Gem deadline på pipeline-entry ─────────────────────────────────────
         deadline = extracted.get("deadline")
         if deadline:
             try:
@@ -638,7 +691,7 @@ async def job_interview(
 
         return {"saved": True, "deadline": deadline, "extracted": extracted}
 
-    # Streaming SSE-svar
+    # ── Streaming SSE-svar ────────────────────────────────────────────────────
     async def event_stream():
         queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
 
