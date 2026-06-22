@@ -16,6 +16,7 @@ from app.api.v1 import (
     interview_center,
     job_discovery,
     jobs,
+    labor_coach,
     memory,
     notifications,
     profile,
@@ -49,5 +50,6 @@ api_router.include_router(gdpr.router)
 api_router.include_router(providers.router)
 api_router.include_router(export.router)
 api_router.include_router(career_coach.router)
+api_router.include_router(labor_coach.router)
 api_router.include_router(job_discovery.router)
 api_router.include_router(templates.router)
