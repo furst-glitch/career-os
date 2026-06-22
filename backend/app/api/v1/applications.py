@@ -334,11 +334,21 @@ async def generate_cover_letter(
             user_id=user["id"],
             pipeline_id=pipeline_id,
             title=title,
-            content=result.content,
+            content=result.content,  # fuld JSON gemmes til PDF-export
             language=lang,
         )
 
-        yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': doc['title'], 'content': result.content, 'language': lang, 'version_number': doc['version_number']})}\n\n"
+        # CV returnerer struktureret JSON — send kun cv_text til visning
+        display_content = result.content
+        if is_cv:
+            try:
+                parsed_cv = _json.loads(result.content)
+                if isinstance(parsed_cv, dict) and parsed_cv.get("_structured_cv_v2"):
+                    display_content = parsed_cv.get("cv_text", result.content)
+            except (ValueError, TypeError):
+                pass
+
+        yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': doc['title'], 'content': display_content, 'language': lang, 'version_number': doc['version_number']})}\n\n"
 
     from fastapi.responses import StreamingResponse as SR
     return SR(

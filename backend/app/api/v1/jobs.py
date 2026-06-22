@@ -4,12 +4,15 @@ Jobs API — Sprint 3.1
 GET    /jobs                  — list alle jobs (saved_only param)
 GET    /jobs/saved            — kun gemte jobs
 POST   /jobs                  — tilføj job + beregn match score
+POST   /jobs/paste            — importér job via URL eller råtekst
 GET    /jobs/{id}             — hent job
 PUT    /jobs/{id}             — opdater job
 DELETE /jobs/{id}             — slet job
 POST   /jobs/{id}/save        — toggle is_saved
 GET    /jobs/{id}/match       — beregn frisk match score
 """
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -18,6 +21,8 @@ from app.services.automation_service import on_job_saved
 from app.services.cache_service import TTL_MATCH, get_cache, key_match
 from app.services.job_service import JobService
 from app.services.memory_snapshot_service import MemorySnapshotService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
@@ -75,6 +80,86 @@ async def create_job(
             job["match_breakdown"] = result
     except Exception:
         pass
+
+    return job
+
+
+# ── Paste / Import ────────────────────────────────────────────────────────────
+
+@router.post("/paste", status_code=201)
+async def paste_job(
+    body: dict,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    Importér job ved at indsætte URL eller råtekst.
+
+    Body:
+      url        — job-URL (optional): hentes og scrapes automatisk
+      text       — råtekst (optional): bruges direkte som full_description
+      title      — jobtitel (optional, bruges som fallback)
+      company    — virksomhed (optional)
+      location   — lokation (optional)
+      job_type   — "full_time" etc.
+      remote_type — "hybrid" etc.
+
+    Returnerer det gemte job med match score, matched_skills og missing_requirements.
+    """
+    from app.services.job_scraper import scrape_jobs_batch
+
+    url = (body.get("url") or "").strip()
+    text = (body.get("text") or "").strip()
+
+    if not url and not text:
+        raise HTTPException(400, "Angiv enten 'url' eller 'text'")
+
+    job_dict: dict = {
+        "url": url or None,
+        "title": (body.get("title") or "").strip() or "Indsat jobopslag",
+        "company": (body.get("company") or "").strip() or "Ukendt",
+        "location": (body.get("location") or "").strip() or None,
+        "job_type": body.get("job_type", "full_time"),
+        "remote_type": body.get("remote_type", "hybrid"),
+        "source": "paste",
+        "description": None,
+        "full_description": text or None,
+        "requirements": [],
+    }
+
+    # Scrape URL if provided (mutates job_dict with full_description + ats_url)
+    if url:
+        try:
+            await scrape_jobs_batch([job_dict], max_concurrent=1, total_timeout=20.0)
+        except Exception as exc:
+            logger.warning("paste_job scraping failed for %s: %s", url, exc)
+
+    svc = _svc(supabase)
+    snap = _snapshot(user["id"], supabase)
+
+    # Compute match score on scraped/pasted text
+    match_result: dict = {}
+    if snap:
+        try:
+            match_result = await svc.compute_match_score(job_dict, snap)
+        except Exception as exc:
+            logger.warning("paste_job match scoring failed: %s", exc)
+
+    # Save to DB
+    payload = {k: v for k, v in job_dict.items()}
+    payload["is_saved"] = True
+    job = svc.create_job(user["id"], payload)
+
+    # Attach match data to response
+    if match_result:
+        try:
+            svc.store_match_score(job["id"], match_result["total"])
+            job["match_score"] = match_result["total"]
+            job["match_breakdown"] = match_result.get("breakdown", {})
+            job["matched_skills"] = match_result.get("matched_skills", [])
+            job["missing_requirements"] = match_result.get("missing_requirements", [])
+        except Exception:
+            pass
 
     return job
 
@@ -303,7 +388,7 @@ async def quickgen(
                 user_id=user["id"],
                 pipeline_id=pipeline_id,
                 title=title,
-                content=result.content,
+                content=result.content,  # fuld JSON gemmes til PDF-export
                 language=body.language,
                 doc_type=body.doc_type,
             )
@@ -312,7 +397,17 @@ async def quickgen(
             yield f"data: {_json.dumps({'type': 'error', 'message': f'Kunne ikke gemme dokument: {exc}'})}\n\n"
             return
 
-        yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': title, 'content': result.content, 'pipeline_id': pipeline_id, 'pipeline_status': new_status})}\n\n"
+        # CV returnerer struktureret JSON — send kun cv_text til modal-visning
+        display_content = result.content
+        if is_cv:
+            try:
+                parsed_cv = _json.loads(result.content)
+                if isinstance(parsed_cv, dict) and parsed_cv.get("_structured_cv_v2"):
+                    display_content = parsed_cv.get("cv_text", result.content)
+            except (ValueError, TypeError):
+                pass
+
+        yield f"data: {_json.dumps({'type': 'done', 'document_id': doc['id'], 'title': title, 'content': display_content, 'pipeline_id': pipeline_id, 'pipeline_status': new_status})}\n\n"
 
     return StreamingResponse(
         process(),
