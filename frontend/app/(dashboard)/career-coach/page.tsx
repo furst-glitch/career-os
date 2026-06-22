@@ -736,7 +736,6 @@ const TABS = [
 
 export default function CareerCoachPage() {
   const [activeTab, setActiveTab] = useState("karriere");
-  const Active = TABS.find(t => t.id === activeTab)?.component ?? TabKarriereanalyse;
 
   return (
     <div className="space-y-6">
@@ -763,7 +762,11 @@ export default function CareerCoachPage() {
         </div>
       </div>
 
-      <Active />
+      {TABS.map(({ id, component: Tab }) => (
+        <div key={id} className={activeTab === id ? undefined : "hidden"}>
+          <Tab />
+        </div>
+      ))}
     </div>
   );
 }
