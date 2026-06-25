@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 
-from app.agents.base import AgentResult, BaseAgent
+from app.agents.base import AgentResult, AgentUsage, BaseAgent
 from app.providers.litellm_provider import LiteLLMProvider, NoProviderKeyError
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,16 @@ class JobDiscoveryAgent(BaseAgent):
                         results[i]["remote_type"] = enrichment["remote_type"]
                     if enrichment.get("ai_summary"):
                         results[i]["ai_summary"] = enrichment["ai_summary"]
+
+            ud = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
+            usage = AgentUsage(
+                prompt_tokens=getattr(ud, "prompt_tokens", 0),
+                completion_tokens=getattr(ud, "completion_tokens", 0),
+                total_tokens=getattr(ud, "total_tokens", 0),
+                model=getattr(response, "model", "unknown"),
+                provider=getattr(response, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
+            )
+            await self.log_usage(usage, operation=self.name, used_user_key=provider.used_user_key)
 
         except NoProviderKeyError:
             pass  # No key — pass results through without AI enrichment

@@ -48,6 +48,8 @@ class SalaryPrepAgent(BaseAgent):
             temperature=0.6,
             max_tokens=400,
         )
+        # TODO: log_usage — streaming response; token counts unavailable until stream is consumed.
+        # Usage is intentionally not logged here to avoid breaking SSE streaming.
         return AgentResult(content="", usage=AgentUsage(), metadata={"stream": resp})
 
     async def run(self, input_data: dict) -> AgentResult:
@@ -118,7 +120,10 @@ Hvornår fremfører man hvad? Hvad gør man hvis man får nej?"""
             prompt_tokens=resp.usage.prompt_tokens,
             completion_tokens=resp.usage.completion_tokens,
             total_tokens=resp.usage.total_tokens,
+            model=getattr(resp, "model", "unknown"),
+            provider=getattr(resp, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
         )
+        await self.log_usage(usage, operation=f"{self.name}_package", used_user_key=llm.used_user_key)
         return AgentResult(content=content, usage=usage)
 
     async def generate_a4(self, input_data: dict) -> AgentResult:
@@ -168,5 +173,8 @@ Hold teksten kort — siden må MAX fylde en A4-side."""
             prompt_tokens=resp.usage.prompt_tokens,
             completion_tokens=resp.usage.completion_tokens,
             total_tokens=resp.usage.total_tokens,
+            model=getattr(resp, "model", "unknown"),
+            provider=getattr(resp, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
         )
+        await self.log_usage(usage, operation=f"{self.name}_a4", used_user_key=llm.used_user_key)
         return AgentResult(content=content, usage=usage)

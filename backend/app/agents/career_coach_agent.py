@@ -125,6 +125,7 @@ class CareerCoachAgent(BaseAgent):
             model=getattr(response, "model", "unknown"),
             provider=getattr(response, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
         )
+        await self.log_usage(usage, operation=self.name, used_user_key=provider.used_user_key)
 
         return AgentResult(
             content=content,

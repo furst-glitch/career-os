@@ -78,5 +78,8 @@ Dette er vejledende analyse og ikke juridisk rådgivning."""
             prompt_tokens=resp.usage.prompt_tokens,
             completion_tokens=resp.usage.completion_tokens,
             total_tokens=resp.usage.total_tokens,
+            model=getattr(resp, "model", "unknown"),
+            provider=getattr(resp, "_hidden_params", {}).get("custom_llm_provider", "unknown"),
         )
+        await self.log_usage(usage, operation=self.name, used_user_key=llm.used_user_key)
         return AgentResult(content=content, usage=usage)

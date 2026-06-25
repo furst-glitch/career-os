@@ -1,3 +1,9 @@
+"""
+Provider base class.
+Will be extended/replaced by AbstractProviderAdapter in backend/app/gateway/providers/base.py
+during AI Gateway implementation (Sprint 2-3).
+See: docs/ai-gateway-spec-v1.md, Section 7.
+"""
 from abc import ABC, abstractmethod
 from typing import Any
 

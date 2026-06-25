@@ -28,7 +28,7 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
         raise HTTPException(status_code=401, detail="Token kunne ikke valideres")
 
 
-PLAN_HIERARCHY = {"free": 0, "pro": 1, "enterprise": 2}
+PLAN_HIERARCHY = {"free": 0, "pro": 1, "professional": 2, "enterprise": 3}
 
 
 def require_plan(minimum_plan: str):
