@@ -7,9 +7,7 @@ Output: AgentResult med parsed_data og gaps i metadata
 import json
 import re
 
-from app.agents.base import AgentResult, AgentUsage, BaseAgent
-from app.gateway import AIGateway, GatewayRequest
-from app.gateway.schemas import GatewayResponse
+from app.agents.base import AgentResult, BaseAgent
 
 PARSE_SYSTEM_PROMPT = """Du er en præcis CV-analysator. Analyser CV-teksten og returner UDELUKKENDE et JSON-objekt.
 
@@ -147,28 +145,12 @@ Regler:
 
 class CVAgent(BaseAgent):
     name = "cv_agent"
-
-    def _get_gateway(self) -> AIGateway:
-        """Lazily build and cache the AIGateway for this agent instance."""
-        if not hasattr(self, "_gateway_instance"):
-            from app.gateway.factory import build_gateway
-            from app.services.cache_service import get_cache
-
-            self._gateway_instance = build_gateway(self.supabase, get_cache())
-        return self._gateway_instance
-
-    @staticmethod
-    def _usage_from_response(response: GatewayResponse) -> AgentUsage:
-        """Map a GatewayResponse into the AgentUsage shape BaseAgent expects."""
-        return AgentUsage(
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
-            total_tokens=response.usage.total_tokens,
-            cost_usd=float(response.usage.cost_usd),
-            latency_ms=response.latency_ms,
-            model=response.model_used,
-            provider=response.provider_used,
-        )
+    capability = "cv_parsing"
+    capabilities = {
+        "run": "cv_parsing",
+        "generate": "cv_generation",
+        "extract_facts": "cv_parsing",
+    }
 
     async def generate(self, input_data: dict) -> AgentResult:
         """
@@ -333,18 +315,11 @@ class CVAgent(BaseAgent):
                 f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}"
             )
 
-        response = await self._get_gateway().complete(
-            GatewayRequest(
-                user_id=self.user_id,
-                agent_name=self.name,
-                task_capability="cv_generation",
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.5,
-                max_tokens=3000,
-            )
+        response = await self._call_gateway(
+            self.capabilities["generate"],
+            [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
+            temperature=0.5,
+            max_tokens=3000,
         )
         cv_text = response.content or ""
         usage = self._usage_from_response(response)
@@ -374,16 +349,12 @@ class CVAgent(BaseAgent):
             {"role": "user", "content": f"Analyser dette CV:\n\n{raw_text[:30000]}"},
         ]
 
-        response = await self._get_gateway().complete(
-            GatewayRequest(
-                user_id=self.user_id,
-                agent_name=self.name,
-                task_capability="cv_parsing",
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                max_tokens=4096,
-            )
+        response = await self._call_gateway(
+            self.capabilities["run"],
+            messages,
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=4096,
         )
 
         raw_json = response.content or "{}"
@@ -418,16 +389,12 @@ class CVAgent(BaseAgent):
             },
         ]
 
-        response = await self._get_gateway().complete(
-            GatewayRequest(
-                user_id=self.user_id,
-                agent_name=self.name,
-                task_capability="cv_parsing",
-                messages=messages,
-                response_format={"type": "json_object"},
-                temperature=0.1,
-                max_tokens=1024,
-            )
+        response = await self._call_gateway(
+            self.capabilities["extract_facts"],
+            messages,
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=1024,
         )
 
         return self._safe_parse(response.content or "{}")

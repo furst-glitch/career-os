@@ -243,17 +243,6 @@ class TestAIPolicyServiceEvaluate:
         assert decision.user_plan == "free"
         assert decision.approved is True
 
-    async def test_capability_lookup_failure_allows_request(self, mock_cache):
-        supabase = make_supabase(
-            plan="pro",
-            capability_raises=True,
-            budget=None,
-        )
-        svc = make_service(supabase, mock_cache)
-        decision = await svc.evaluate("u1", "cv_generation")
-        # Capability fail-open → no capability gate; allowed.
-        assert decision.approved is True
-
     async def test_budget_lookup_failure_allows_request(self, mock_cache):
         supabase = make_supabase(
             plan="pro",
@@ -290,15 +279,27 @@ class TestAIPolicyServiceEvaluate:
         assert decision.approved is True
         assert decision.budget_warning is False
 
-    async def test_unknown_capability_defaults_to_allowed(self, mock_cache):
-        # plan_capabilities returns no row for this capability.
+    async def test_unknown_capability_denied_fail_closed(self, mock_cache):
+        # Sprint 5: plan_capabilities has no row → deny with unknown_capability code.
         supabase = make_supabase(
             plan="pro",
-            capability=None,
+            capability=None,  # DB returns no row
             budget=None,
         )
         svc = make_service(supabase, mock_cache)
         decision = await svc.evaluate("u1", "some_new_capability")
+        assert decision.approved is False
+        assert decision.denial_code == "unknown_capability"
+
+    async def test_capability_db_error_fails_open(self, mock_cache):
+        # DB infrastructure failure → fail open (infra problem, not a policy decision).
+        supabase = make_supabase(
+            plan="pro",
+            capability_raises=True,
+            budget=None,
+        )
+        svc = make_service(supabase, mock_cache)
+        decision = await svc.evaluate("u1", "cv_generation")
         assert decision.approved is True
 
     async def test_enterprise_plan_allows_all_capabilities(self, mock_cache):

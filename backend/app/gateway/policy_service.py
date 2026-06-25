@@ -12,11 +12,14 @@ Limitations:
   - Rate limit degrades to per-process in-memory counters when Redis is down.
   - Capability/plan caches mean changes propagate within their TTL window.
 
-Fail-safe philosophy:
-  - Plan lookup failure   → assume "free" (least privilege).
-  - Capability lookup fail → fail OPEN (allow) for better UX; log warning.
-  - Budget lookup failure  → fail OPEN (allow); log warning.
-  - Redis unavailable      → rate limit & reservation degrade to allow; log.
+Fail-safe philosophy (Sprint 5 update):
+  - Plan lookup failure      → assume "free" (least privilege).
+  - Capability NOT IN DB     → DENY (fail-closed since Sprint 5).
+    Unknown capabilities are a configuration error, not an infra error.
+    All valid capabilities must exist in plan_capabilities.
+  - Capability DB ERROR      → fail OPEN with warning (infra failure, not policy).
+  - Budget lookup failure    → fail OPEN (allow); log warning.
+  - Redis unavailable        → rate limit & reservation degrade to allow; log.
   Never crash the request path on a policy-infrastructure error.
 
 Performance target: <10ms cached paths, <50ms uncached paths.
@@ -64,6 +67,11 @@ class _CapabilityEntry:
     enabled: bool
     requests_per_minute: int | None
     requests_per_day: int | None
+    # found=True: row exists in DB (even if enabled=False).
+    # found=False: DB returned no row (capability not registered for this plan).
+    # db_error=True: infra failure — caller should fail open.
+    found: bool = True
+    db_error: bool = False
 
 
 def _reservation_key(user_id: str) -> str:
@@ -93,9 +101,28 @@ class AIPolicyService:
         # 1. Resolve the user's plan.
         plan = await self._get_user_plan(user_id)
 
-        # 2. Capability gate. Unknown capability → permissive (None entry).
+        # 2. Capability gate.
         capability_entry = await self._get_capability_entry(plan, task_capability)
-        if capability_entry is not None and not capability_entry.enabled:
+        if capability_entry.db_error:
+            # Infrastructure failure → fail open (policy infra problem, not a denial).
+            logger.warning(
+                "capability_check_skipped_db_error plan=%s capability=%s",
+                plan, task_capability,
+            )
+        elif not capability_entry.found:
+            # Capability not registered in plan_capabilities → fail closed.
+            # This is a configuration error (e.g. agent declares a capability that
+            # doesn't exist in the DB). Deny explicitly rather than allowing silently.
+            return PolicyDecision(
+                approved=False,
+                user_plan=plan,
+                denial_reason=(
+                    f"Unknown capability '{task_capability}'. "
+                    "Contact support if you believe this is an error."
+                ),
+                denial_code="unknown_capability",
+            )
+        elif not capability_entry.enabled:
             return PolicyDecision(
                 approved=False,
                 user_plan=plan,
@@ -107,7 +134,7 @@ class AIPolicyService:
             )
 
         # 3. Rate-limit gate (per-minute window).
-        rpm_limit = capability_entry.requests_per_minute if capability_entry else None
+        rpm_limit = capability_entry.requests_per_minute if not capability_entry.db_error else None
         rate_ok, retry_after = await self._check_rate_limit(user_id, rpm_limit)
         if not rate_ok:
             return PolicyDecision(
@@ -245,12 +272,15 @@ class AIPolicyService:
         self,
         plan: str,
         capability: str,
-    ) -> _CapabilityEntry | None:
+    ) -> _CapabilityEntry:
         """
         Get the capability config for a plan. Cached _TTL_CAPABILITIES seconds.
 
-        Returns None when the capability is not configured for the plan, which
-        the caller treats as permissive (allow unknown capabilities).
+        Always returns a _CapabilityEntry — never None.
+        Check the returned entry's flags:
+          .found=True,  .db_error=False → row exists; check .enabled
+          .found=False, .db_error=False → capability not in DB → caller should deny
+          .found=False, .db_error=True  → infra failure → caller should fail open
         """
         cache_key = f"policy:cap:{plan}:{capability}"
 
@@ -261,6 +291,7 @@ class AIPolicyService:
                     enabled=cached["enabled"],
                     requests_per_minute=cached.get("requests_per_minute"),
                     requests_per_day=cached.get("requests_per_day"),
+                    found=cached.get("found", True),
                 )
         except Exception:
             pass
@@ -275,18 +306,41 @@ class AIPolicyService:
                 .execute()
             )
             if not result.data:
-                return None
+                # Capability not registered — return not-found sentinel.
+                not_found = _CapabilityEntry(
+                    enabled=False,
+                    requests_per_minute=None,
+                    requests_per_day=None,
+                    found=False,
+                )
+                # Cache the not-found result so we don't hammer the DB.
+                try:
+                    await self._cache.set(
+                        cache_key,
+                        {"enabled": False, "requests_per_minute": None, "requests_per_day": None, "found": False},
+                        ttl=_TTL_CAPABILITIES,
+                    )
+                except Exception:
+                    pass
+                return not_found
+
             entry = _CapabilityEntry(
                 enabled=result.data["enabled"],
                 requests_per_minute=result.data.get("requests_per_minute"),
                 requests_per_day=result.data.get("requests_per_day"),
             )
         except Exception:
-            # Table missing or DB error — fail open.
+            # Table missing or DB error — return db_error sentinel (caller fails open).
             logger.warning(
-                "capability_lookup_failed_allowing plan=%s cap=%s", plan, capability
+                "capability_lookup_failed plan=%s cap=%s", plan, capability
             )
-            return None
+            return _CapabilityEntry(
+                enabled=False,
+                requests_per_minute=None,
+                requests_per_day=None,
+                found=False,
+                db_error=True,
+            )
 
         try:
             await self._cache.set(
@@ -295,6 +349,7 @@ class AIPolicyService:
                     "enabled": entry.enabled,
                     "requests_per_minute": entry.requests_per_minute,
                     "requests_per_day": entry.requests_per_day,
+                    "found": True,
                 },
                 ttl=_TTL_CAPABILITIES,
             )

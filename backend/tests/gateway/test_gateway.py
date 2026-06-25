@@ -85,7 +85,9 @@ class _Supabase:
     UsageTracker/AuditWriter inserts.
     """
 
-    def __init__(self, plan="pro", budget=None, capability=None):
+    _DEFAULT_CAPABILITY = {"enabled": True, "requests_per_minute": None, "requests_per_day": None}
+
+    def __init__(self, plan="pro", budget=None, capability=_DEFAULT_CAPABILITY):
         self._plan = plan
         self._budget = budget
         self._capability = capability
@@ -114,6 +116,9 @@ class _Table:
     def single(self):
         return self
 
+    def limit(self, *a, **k):
+        return self
+
     def insert(self, row):
         self._sb.inserts.setdefault(self._name, []).append(row)
         return self
@@ -125,7 +130,7 @@ class _Table:
             return SimpleNamespace(data=self._sb._capability)
         if self._name == "ai_budgets":
             return SimpleNamespace(data=self._sb._budget)
-        return SimpleNamespace(data=[])
+        return SimpleNamespace(data=[])  # agent_registry and others → empty list
 
 
 def _settings():

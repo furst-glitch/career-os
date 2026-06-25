@@ -2,7 +2,11 @@ import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.gateway.gateway import AIGateway
+    from app.gateway.schemas import GatewayResponse
 
 logger = logging.getLogger("app.agents")
 
@@ -27,6 +31,16 @@ class AgentResult:
 
 class BaseAgent(ABC):
     name: str = ""
+
+    # ── Gateway capability declaration (Sprint 5) ──────────────────────────
+    # Each agent declares which plan_capability it uses. Agents with multiple
+    # LLM-calling methods and different capabilities override `capabilities`
+    # to provide a per-method mapping (method_name → capability string).
+    #
+    # Valid strings must exist in the plan_capabilities table. AIPolicyService
+    # enforces this at request time (fail-closed since Sprint 5).
+    capability: str = "chat"
+    capabilities: dict[str, str] = {}  # method_name → capability override
 
     def __init__(self, user_id: str, supabase: Any) -> None:
         self.user_id = user_id
@@ -72,6 +86,67 @@ class BaseAgent(ABC):
             "latency_ms": usage.latency_ms,
             "used_user_key": used_user_key,
         }).execute()
+
+    # ── AI Gateway integration (Sprint 5) ─────────────────────────────────
+
+    def _get_gateway(self) -> "AIGateway":
+        """Lazily build and cache the AIGateway for this agent instance."""
+        if not hasattr(self, "_gateway_instance"):
+            from app.gateway.factory import build_gateway
+            from app.services.cache_service import get_cache
+
+            self._gateway_instance = build_gateway(self.supabase, get_cache())
+        return self._gateway_instance
+
+    @staticmethod
+    def _usage_from_response(response: "GatewayResponse") -> AgentUsage:
+        """Convert a GatewayResponse's usage into the AgentUsage shape."""
+        return AgentUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
+            cost_usd=float(response.usage.cost_usd),
+            latency_ms=response.latency_ms,
+            model=response.model_used,
+            provider=response.provider_used,
+        )
+
+    async def _call_gateway(
+        self,
+        task_capability: str,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float = 0.5,
+        max_tokens: int = 2048,
+        response_format: dict | None = None,
+        stream: bool = False,
+    ) -> "GatewayResponse":
+        """
+        One-liner entry point for Gateway-based agents.
+
+        Builds a GatewayRequest from the provided arguments and dispatches it
+        through the full Gateway pipeline (policy → key → PII → route →
+        provider → usage → audit → response).
+
+        Callers receive a GatewayResponse; convert to AgentUsage via
+        _usage_from_response() and to AgentResult manually.
+        """
+        from app.gateway.schemas import GatewayRequest
+
+        return await self._get_gateway().complete(
+            GatewayRequest(
+                user_id=self.user_id,
+                agent_name=self.name,
+                task_capability=task_capability,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                stream=stream,
+            )
+        )
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
 
     async def run_tracked(self, input_data: dict) -> AgentResult:
         """Wraps run() with timing + Sentry error tracking."""
