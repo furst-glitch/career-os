@@ -6,10 +6,10 @@ Output: AgentResult med parsed_data og gaps i metadata
 """
 import json
 import re
-import time
 
 from app.agents.base import AgentResult, AgentUsage, BaseAgent
-from app.providers.litellm_provider import LiteLLMProvider
+from app.gateway import AIGateway, GatewayRequest
+from app.gateway.schemas import GatewayResponse
 
 PARSE_SYSTEM_PROMPT = """Du er en præcis CV-analysator. Analyser CV-teksten og returner UDELUKKENDE et JSON-objekt.
 
@@ -147,6 +147,28 @@ Regler:
 
 class CVAgent(BaseAgent):
     name = "cv_agent"
+
+    def _get_gateway(self) -> AIGateway:
+        """Lazily build and cache the AIGateway for this agent instance."""
+        if not hasattr(self, "_gateway_instance"):
+            from app.gateway.factory import build_gateway
+            from app.services.cache_service import get_cache
+
+            self._gateway_instance = build_gateway(self.supabase, get_cache())
+        return self._gateway_instance
+
+    @staticmethod
+    def _usage_from_response(response: GatewayResponse) -> AgentUsage:
+        """Map a GatewayResponse into the AgentUsage shape BaseAgent expects."""
+        return AgentUsage(
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens,
+            cost_usd=float(response.usage.cost_usd),
+            latency_ms=response.latency_ms,
+            model=response.model_used,
+            provider=response.provider_used,
+        )
 
     async def generate(self, input_data: dict) -> AgentResult:
         """
@@ -311,21 +333,21 @@ class CVAgent(BaseAgent):
                 f"Candidate Profile (use ONLY these dates and facts — invent nothing):\n{candidate_summary}"
             )
 
-        llm = LiteLLMProvider(self.user_id)
-        response = await llm.complete(
-            self.name,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
-            temperature=0.5,
-            max_tokens=3000,
+        response = await self._get_gateway().complete(
+            GatewayRequest(
+                user_id=self.user_id,
+                agent_name=self.name,
+                task_capability="cv_generation",
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0.5,
+                max_tokens=3000,
+            )
         )
-        cv_text = response.choices[0].message.content or ""
-        ud = response.usage or type("U", (), {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})()
-        usage = AgentUsage(
-            prompt_tokens=getattr(ud, "prompt_tokens", 0),
-            completion_tokens=getattr(ud, "completion_tokens", 0),
-            total_tokens=getattr(ud, "total_tokens", 0),
-            model=getattr(response, "model", "unknown"),
-        )
+        cv_text = response.content or ""
+        usage = self._usage_from_response(response)
 
         # Assemble structured content — education/skills/systems are hardcoded from DB
         structured = {
@@ -352,30 +374,24 @@ class CVAgent(BaseAgent):
             {"role": "user", "content": f"Analyser dette CV:\n\n{raw_text[:30000]}"},
         ]
 
-        llm = LiteLLMProvider(self.user_id)
-        start = time.time()
-        response = await llm.complete(
-            self.name,
-            messages,
-            response_format={"type": "json_object"},
-            temperature=0.1,
-            max_tokens=4096,
+        response = await self._get_gateway().complete(
+            GatewayRequest(
+                user_id=self.user_id,
+                agent_name=self.name,
+                task_capability="cv_parsing",
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=4096,
+            )
         )
-        latency_ms = int((time.time() - start) * 1000)
 
-        raw_json = response.choices[0].message.content or "{}"
+        raw_json = response.content or "{}"
         parsed = self._safe_parse(raw_json)
 
-        resolved_provider, resolved_model = await llm._resolve_model(self.name)
-        usage = AgentUsage(
-            prompt_tokens=response.usage.prompt_tokens,
-            completion_tokens=response.usage.completion_tokens,
-            total_tokens=response.usage.total_tokens,
-            model=resolved_model,
-            provider=resolved_provider,
-            latency_ms=latency_ms,
-        )
-        await self.log_usage(usage, operation="cv_parse", used_user_key=llm.used_user_key)
+        # Usage (incl. cost + latency) is tracked inside the Gateway; we still
+        # surface it on AgentResult for callers that read result.usage.
+        usage = self._usage_from_response(response)
 
         return AgentResult(
             content=raw_json,
@@ -402,16 +418,19 @@ class CVAgent(BaseAgent):
             },
         ]
 
-        llm = LiteLLMProvider(self.user_id)
-        response = await llm.complete(
-            self.name,
-            messages,
-            response_format={"type": "json_object"},
-            temperature=0.1,
-            max_tokens=1024,
+        response = await self._get_gateway().complete(
+            GatewayRequest(
+                user_id=self.user_id,
+                agent_name=self.name,
+                task_capability="cv_parsing",
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=1024,
+            )
         )
 
-        return self._safe_parse(response.choices[0].message.content or "{}")
+        return self._safe_parse(response.content or "{}")
 
     @staticmethod
     def _safe_parse(raw: str) -> dict:
