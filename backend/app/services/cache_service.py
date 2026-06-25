@@ -74,6 +74,29 @@ class _MemoryCache:
             del self._store[k]
         return len(keys)
 
+    # ── Atomic integer counters (Redis INCR/INCRBY parity) ─────────────────
+    # Used by AIPolicyService for rate limiting and budget reservations.
+    # In-memory parity is best-effort (single-process); Redis is authoritative.
+
+    async def get_int(self, key: str) -> int:
+        value = await self.get(key)
+        try:
+            return int(value) if value is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    async def increment(self, key: str, expire_seconds: int = 60) -> int:
+        current = await self.get_int(key)
+        new_value = current + 1
+        await self.set(key, new_value, ttl=expire_seconds)
+        return new_value
+
+    async def increment_by(self, key: str, amount: int, expire_seconds: int = 300) -> int:
+        current = await self.get_int(key)
+        new_value = current + amount
+        await self.set(key, new_value, ttl=expire_seconds)
+        return new_value
+
     def stats(self) -> dict:
         total = self._hits + self._misses
         return {
@@ -131,6 +154,33 @@ class _RedisCache:
         except Exception as exc:
             logger.warning("Redis DELETE_PATTERN error for %s: %s", pattern, exc)
             return 0
+
+    # ── Atomic integer counters ────────────────────────────────────────────
+    # Native Redis INCR/INCRBY — atomic across processes. These store the value
+    # as a plain integer string (NOT JSON), so use get_int() to read them back,
+    # never get(). Used by AIPolicyService for rate limits and budget reservations.
+
+    async def get_int(self, key: str) -> int:
+        try:
+            raw = await self._client.get(key)
+            return int(raw) if raw is not None else 0
+        except Exception as exc:
+            logger.warning("Redis GET_INT error for %s: %s", key, exc)
+            return 0
+
+    async def increment(self, key: str, expire_seconds: int = 60) -> int:
+        # INCR is atomic and creates the key at 0 if absent. Set TTL only on the
+        # first increment (NX) so an active window isn't extended on every hit.
+        new_value = await self._client.incr(key)
+        if new_value == 1:
+            await self._client.expire(key, expire_seconds)
+        return int(new_value)
+
+    async def increment_by(self, key: str, amount: int, expire_seconds: int = 300) -> int:
+        new_value = await self._client.incrby(key, amount)
+        # (Re)arm the TTL so reservations don't linger indefinitely.
+        await self._client.expire(key, expire_seconds)
+        return int(new_value)
 
     def stats(self) -> dict:
         total = self._hits + self._misses
