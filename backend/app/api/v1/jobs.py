@@ -93,10 +93,30 @@ async def create_job(
     svc = _svc(supabase)
     job = svc.create_job(user["id"], {k: v for k, v in body.items() if not k.startswith("_")})
 
-    # Gem deadline på pipeline-entry hvis udtrukket (oprettes af automation_service ved is_saved)
+    # Opret pipeline-entry automatisk så jobbet vises i kanban (status: draft)
+    try:
+        from app.services.application_service import ApplicationService
+        app_svc = ApplicationService(supabase)
+        pipeline_entry = app_svc.create_pipeline(
+            user["id"], job["id"], {"status": "draft", "priority": "medium"}
+        )
+        job["pipeline_id"] = pipeline_entry["id"]
+        job["pipeline_status"] = "draft"
+        job["pipeline_priority"] = "medium"
+    except Exception:
+        job["pipeline_id"] = None
+        job["pipeline_status"] = None
+        job["pipeline_priority"] = None
+
+    # Gem deadline på pipeline-entry hvis udtrukket
     extracted_deadline = body.get("_extracted_deadline")
     if extracted_deadline:
         job["extracted_deadline"] = extracted_deadline
+        if job.get("pipeline_id"):
+            try:
+                app_svc.update_pipeline(user["id"], job["pipeline_id"], {"deadline": extracted_deadline})
+            except Exception:
+                pass
 
     # Beregn og gem match score (fejler stille)
     try:
@@ -704,7 +724,8 @@ async def job_interview(
                     if m.get("role") in ("user", "assistant")
                 ]
                 resp = await llm.complete(
-                    "cv_agent", messages, stream=True, temperature=0.7, max_tokens=400,
+                    "career_coach_agent", messages, stream=True,
+                    temperature=0.7, max_tokens=400, timeout=30,
                 )
                 async for chunk in resp:
                     delta = chunk.choices[0].delta.content or ""
@@ -724,12 +745,20 @@ async def job_interview(
                     pass
 
         task = asyncio.create_task(producer())
+        ping_count = 0
         try:
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    ping_count = 0
                 except TimeoutError:
+                    ping_count += 1
                     yield ": ping\n\n"
+                    if ping_count >= 12:  # 60s total uden svar → afbryd
+                        task.cancel()
+                        yield f"data: {_json.dumps({'type': 'error', 'content': 'AI-svaret tog for lang tid. Prøv igen.'})}\n\n"
+                        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                        break
                     continue
                 if kind == "done":
                     yield f"data: {_json.dumps({'type': 'done'})}\n\n"

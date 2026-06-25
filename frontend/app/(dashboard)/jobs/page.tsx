@@ -115,8 +115,20 @@ function JobInterviewModal({ job, onClose }: { job: Job; onClose: () => void }) 
         ));
         setInitializing(false);
       },
-      () => { if (!cancelled) setInitializing(false); },
-    ).catch(() => { if (!cancelled) setInitializing(false); });
+      (err) => {
+        if (cancelled) return;
+        const msg = err?.includes("no_api_key") || err?.includes("API-nøgle")
+          ? "Ingen AI-nøgle konfigureret. Gå til Indstillinger → AI-udbydere."
+          : (err || "AI-intervieweren kunne ikke starte. Prøv igen.");
+        setMessages([{ role: "assistant", content: msg, streaming: false }]);
+        setInitializing(false);
+      },
+    ).catch(() => {
+      if (!cancelled) {
+        setMessages([{ role: "assistant", content: "Forbindelsen til AI fejlede. Prøv at lukke og åbne dialogen igen.", streaming: false }]);
+        setInitializing(false);
+      }
+    });
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -146,8 +158,19 @@ function JobInterviewModal({ job, onClose }: { job: Job; onClose: () => void }) 
         ));
         setSending(false);
       },
-      () => setSending(false),
-    ).catch(() => setSending(false));
+      (err) => {
+        const msg = err || "AI-svaret fejlede. Prøv igen.";
+        setMessages(prev => prev.map((m, i) =>
+          i === prev.length - 1 ? { ...m, content: msg, streaming: false } : m
+        ));
+        setSending(false);
+      },
+    ).catch(() => {
+      setMessages(prev => prev.map((m, i) =>
+        i === prev.length - 1 ? { ...m, content: "Forbindelsesfejl. Prøv igen.", streaming: false } : m
+      ));
+      setSending(false);
+    });
   }, [input, messages, sending, saving, saved, job.id]);
 
   async function handleSaveClose() {
