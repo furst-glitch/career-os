@@ -10,6 +10,7 @@ from app.api.v1 import (
     cv,
     dashboard,
     discovery,
+    document_intelligence,
     # experience,     # SKELETON — Experience Discovery module not yet implemented
     export,
     # gdpr,           # SKELETON — GDPR export/delete endpoints not yet implemented
@@ -51,5 +52,6 @@ api_router.include_router(providers.router)
 api_router.include_router(export.router)
 api_router.include_router(career_coach.router)
 api_router.include_router(labor_coach.router)
+api_router.include_router(document_intelligence.router)
 api_router.include_router(job_discovery.router)
 api_router.include_router(templates.router)
