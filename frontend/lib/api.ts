@@ -60,6 +60,43 @@ export async function apiDelete(path: string): Promise<void> {
   if (!res.ok) return extractError(res, path);
 }
 
+export async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  const headers = await getAuthHeader();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "PATCH",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) return extractError(res, path);
+  return res.json();
+}
+
+export async function apiUploadWithFields<T>(
+  path: string,
+  file: File,
+  fields: Record<string, string>,
+): Promise<T> {
+  const headers = await getAuthHeader();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mime = file.type || EXT_MIME[ext] || "application/octet-stream";
+  const fileWithType = mime !== file.type ? new File([file], file.name, { type: mime }) : file;
+  const form = new FormData();
+  form.append("file", fileWithType);
+  for (const [key, value] of Object.entries(fields)) {
+    form.append(key, value);
+  }
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers, // Don't set Content-Type — browser adds boundary automatically
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text || `API ${path}: ${res.status}`);
+  }
+  return res.json();
+}
+
 const EXT_MIME: Record<string, string> = {
   pdf: "application/pdf",
   doc: "application/msword",

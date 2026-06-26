@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
@@ -194,3 +195,58 @@ async def list_document_facts(
     )
     facts = await svc.list_facts(document_id=document_id, user_id=user["id"])
     return [FactItem(**f) for f in facts]
+
+
+class FactUpdateRequest(BaseModel):
+    value: str | None = None
+    confidence: Literal["high", "medium", "low"] | None = None
+    requires_confirmation: bool | None = None
+
+
+@router.patch("/facts/{fact_id}")
+@limiter.limit(LIMIT_COACH)
+async def update_fact(
+    request: Request,
+    fact_id: str,
+    body: FactUpdateRequest,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    Human in the Loop: update a fact's value, confidence, or confirmation state.
+
+    Once a user confirms or corrects a fact, requires_confirmation is set to false.
+    User decisions are final — the AI extraction pipeline will not overwrite them.
+    """
+    existing = (
+        supabase.table("document_facts")
+        .select("id")
+        .eq("id", fact_id)
+        .eq("user_id", user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(404, detail="Fact not found")
+
+    updates: dict = {}
+    if body.value is not None:
+        updates["value"] = body.value
+    if body.confidence is not None:
+        updates["confidence"] = body.confidence
+    if body.requires_confirmation is not None:
+        updates["requires_confirmation"] = body.requires_confirmation
+
+    if not updates:
+        raise HTTPException(422, detail="No fields to update")
+
+    result = (
+        supabase.table("document_facts")
+        .update(updates)
+        .eq("id", fact_id)
+        .eq("user_id", user["id"])
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(500, detail="Update failed")
+    return result.data[0]
