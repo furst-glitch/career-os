@@ -124,7 +124,9 @@ class EmploymentGraphService:
                 self._supabase.table("document_facts")
                 .select(
                     "id, fact_type, value, unit, confidence, requires_confirmation, "
-                    "source_text, source_page, document_id, career_memory_id, created_at"
+                    "source_text, source_page, document_id, career_memory_id, "
+                    "ai_model, extraction_run_id, created_at, "
+                    "verified_by, verified_at, previous_value, verification_reason"
                 )
                 .eq("user_id", user_id)
                 .eq("employment_id", employment_id)
@@ -163,7 +165,7 @@ class EmploymentGraphService:
                 self._supabase.table("employment_recommendations")
                 .select(
                     "id, recommendation_type, severity, title, description, "
-                    "fact_types, status, created_at"
+                    "fact_types, affected_fact_ids, analysis_id, status, created_at"
                 )
                 .eq("user_id", user_id)
                 .eq("employment_id", employment_id)

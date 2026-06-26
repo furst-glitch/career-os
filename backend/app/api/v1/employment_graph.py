@@ -432,7 +432,25 @@ async def chat_with_employment(
     system_prompt = _build_employment_system_prompt(graph)
     agent = EmploymentChatAgent(user_id=user["id"], supabase=supabase)
 
+    _DOC_TYPE_LABELS = {"contract": "Kontrakt", "payslip": "Lønseddel", "agreement": "Overenskomst", "pension": "Pensionsopgørelse"}
+
     async def event_stream():
+        # WP6: Emit context event first so frontend can show "Baseret på" references
+        based_on = {
+            "documents": [
+                {"id": d["id"], "file_name": d["file_name"], "doc_type": d["doc_type"],
+                 "label": _DOC_TYPE_LABELS.get(d["doc_type"], d["doc_type"])}
+                for d in graph.documents
+            ],
+            "facts_count": len(graph.facts),
+            "pending_recommendations": [
+                {"id": r["id"], "title": r["title"], "severity": r["severity"]}
+                for r in graph.recommendations if r.get("status") == "pending"
+            ],
+            "analyses_count": len(graph.analyses),
+        }
+        yield f"data: {_json.dumps({'type': 'context', 'based_on': based_on})}\n\n"
+
         queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
 
         async def producer():
@@ -465,7 +483,8 @@ async def chat_with_employment(
                     yield ": ping\n\n"
                     continue
                 if kind == "done":
-                    yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                    # WP6: include based_on in done payload so frontend can show references
+                    yield f"data: {_json.dumps({'type': 'done', 'based_on': based_on})}\n\n"
                     break
                 yield f"data: {payload}\n\n"
         finally:
@@ -476,3 +495,281 @@ async def chat_with_employment(
                 pass
 
     return _sse_stream(event_stream())
+
+
+# ── WP1: Explain Recommendation ───────────────────────────────────────────────
+
+_RULE_EXPLANATIONS: dict[str, dict] = {
+    "salary_mismatch": {
+        "label": "Lønafvigelse",
+        "description": "Kontraktsystemet sammenligner månedslønnen i kontrakten med bruttolønnen på lønsedlen.",
+        "rule": "Afvigelse > 5% markeres. Alvorlighedsgrad: >10% = høj, >5% = middel.",
+        "calculation": "Afvigelse (%) = |løn_A − løn_B| / maks(løn_A, løn_B) × 100",
+    },
+    "pension_mismatch": {
+        "label": "Pensionsafvigelse",
+        "description": "Sammenligner pensionsprocenten på tværs af dokumenter.",
+        "rule": "Afvigelse > 1 procentpoint markeres. Alvorlighedsgrad: >2 pct.point = høj.",
+        "calculation": "Afvigelse = |pension_A − pension_B| procentpoint",
+    },
+    "hours_mismatch": {
+        "label": "Arbejdstidsafvigelse",
+        "description": "Sammenligner den ugentlige arbejdstid på tværs af dokumenter.",
+        "rule": "Afvigelse > 0,5 time/uge markeres.",
+        "calculation": "Afvigelse = |timer_A − timer_B| timer/uge",
+    },
+}
+
+_DOC_LABELS_EXP = {
+    "contract": "kontrakt", "payslip": "lønseddel",
+    "agreement": "overenskomst", "pension": "pensionsopgørelse",
+}
+
+
+def _confidence_reasons_for_rec(rec: dict, facts: list[dict], docs: list[dict]) -> list[str]:
+    reasons: list[str] = []
+    doc_map = {d["id"]: d for d in docs}
+    doc_types_used = [
+        _DOC_LABELS_EXP.get(doc_map[f["document_id"]]["doc_type"], "dokument")
+        for f in facts if f.get("document_id") in doc_map
+    ]
+    for dt in sorted(set(doc_types_used)):
+        reasons.append(f"Fundet i {dt}")
+    values = [f.get("value", "") for f in facts]
+    if len(set(values)) > 1:
+        reasons.append("Afvigelse bekræftet på tværs af dokumenter")
+    verified = [f for f in facts if f.get("verified_at")]
+    if verified:
+        reasons.append(f"{len(verified)} fakta er verificeret af bruger")
+    if rec.get("severity") in ("critical", "high"):
+        reasons.append("Høj alvorlighedsgrad — bør afklares")
+    return reasons
+
+
+@router.get("/recommendations/{rec_id}/explain")
+@limiter.limit(LIMIT_COACH)
+async def explain_recommendation(
+    request: Request,
+    rec_id: str,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    WP1 — Full explanation for a recommendation:
+    documents used, facts compared, rule applied, calculation, confidence reasons.
+    """
+    rec_result = (
+        supabase.table("employment_recommendations")
+        .select("id, recommendation_type, severity, title, description, fact_types, affected_fact_ids, analysis_id, status, created_at")
+        .eq("id", rec_id)
+        .eq("user_id", user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not rec_result.data:
+        raise HTTPException(404, detail="Recommendation not found")
+    rec = rec_result.data[0]
+
+    # Fetch affected facts with full provenance
+    affected_ids = rec.get("affected_fact_ids") or []
+    facts: list[dict] = []
+    if affected_ids:
+        facts_result = (
+            supabase.table("document_facts")
+            .select(
+                "id, fact_type, value, unit, confidence, source_text, source_page, "
+                "document_id, ai_model, created_at, verified_by, verified_at, previous_value"
+            )
+            .in_("id", affected_ids)
+            .eq("user_id", user["id"])
+            .execute()
+        )
+        facts = facts_result.data or []
+
+    # Fetch the documents those facts came from
+    doc_ids = list({f["document_id"] for f in facts if f.get("document_id")})
+    docs: list[dict] = []
+    if doc_ids:
+        docs_result = (
+            supabase.table("coach_documents")
+            .select("id, doc_type, file_name, created_at")
+            .in_("id", doc_ids)
+            .eq("user_id", user["id"])
+            .execute()
+        )
+        docs = docs_result.data or []
+
+    # Fetch analysis result_json for context
+    analysis_meta: dict = {}
+    if rec.get("analysis_id"):
+        a_result = (
+            supabase.table("employment_analyses")
+            .select("result_json, created_at")
+            .eq("id", rec["analysis_id"])
+            .eq("user_id", user["id"])
+            .limit(1)
+            .execute()
+        )
+        if a_result.data:
+            analysis_meta = a_result.data[0]
+
+    rule = _RULE_EXPLANATIONS.get(rec.get("recommendation_type", ""), {})
+    confidence_reasons = _confidence_reasons_for_rec(rec, facts, docs)
+
+    return {
+        "recommendation": rec,
+        "facts_used": facts,
+        "documents_used": docs,
+        "rule": rule,
+        "confidence_reasons": confidence_reasons,
+        "analysis_run_at": analysis_meta.get("created_at"),
+        "rules_checked": (analysis_meta.get("result_json") or {}).get("rules_checked", []),
+    }
+
+
+# ── WP5: Recommendation Timeline ──────────────────────────────────────────────
+
+
+@router.get("/{employment_id}/timeline")
+@limiter.limit(LIMIT_COACH)
+async def get_employment_timeline(
+    request: Request,
+    employment_id: str,
+    user=Depends(get_current_user),
+    supabase=Depends(get_supabase_admin),
+):
+    """
+    WP5 — Full audit trail for an Employment: from document upload to resolved recommendation.
+    """
+    _TYPE_LABELS = {
+        "contract": "Kontrakt", "payslip": "Lønseddel",
+        "agreement": "Overenskomst", "pension": "Pensionsopgørelse",
+    }
+
+    # Verify ownership
+    emp_result = (
+        supabase.table("experiences")
+        .select("id, title, organisation, created_at")
+        .eq("id", employment_id)
+        .eq("user_id", user["id"])
+        .limit(1)
+        .execute()
+    )
+    if not emp_result.data:
+        raise HTTPException(404, detail="Employment not found")
+    emp = emp_result.data[0]
+
+    events: list[dict] = []
+
+    events.append({
+        "type": "employment_created",
+        "ts": emp["created_at"],
+        "label": f"Ansættelse oprettet: {emp['title']}" + (f" hos {emp['organisation']}" if emp.get("organisation") else ""),
+        "icon": "work",
+    })
+
+    # Documents
+    docs_result = (
+        supabase.table("coach_documents")
+        .select("id, doc_type, file_name, created_at")
+        .eq("employment_id", employment_id)
+        .eq("user_id", user["id"])
+        .order("created_at")
+        .execute()
+    )
+    for doc in (docs_result.data or []):
+        type_label = _TYPE_LABELS.get(doc["doc_type"], doc["doc_type"])
+        events.append({
+            "type": "document_uploaded",
+            "ts": doc["created_at"],
+            "label": f"{type_label} uploadet: {doc['file_name']}",
+            "document_id": doc["id"],
+            "icon": "document",
+        })
+
+    # Facts — group by extraction_run_id to show extraction batches
+    facts_result = (
+        supabase.table("document_facts")
+        .select("id, fact_type, created_at, extraction_run_id, verified_at, requires_confirmation")
+        .eq("employment_id", employment_id)
+        .eq("user_id", user["id"])
+        .order("created_at")
+        .execute()
+    )
+    facts_list = facts_result.data or []
+
+    # Group into extraction runs
+    run_batches: dict[str, dict] = {}
+    for fact in facts_list:
+        run_id = fact.get("extraction_run_id") or fact["created_at"][:16]
+        if run_id not in run_batches:
+            run_batches[run_id] = {"ts": fact["created_at"], "count": 0}
+        run_batches[run_id]["count"] += 1
+
+    for run in run_batches.values():
+        events.append({
+            "type": "facts_extracted",
+            "ts": run["ts"],
+            "label": f"AI udtrakkede {run['count']} fakta",
+            "icon": "ai",
+        })
+
+    # Human verifications
+    for fact in facts_list:
+        if fact.get("verified_at"):
+            events.append({
+                "type": "fact_verified",
+                "ts": fact["verified_at"],
+                "label": f"Bruger verificerede: {fact['fact_type'].replace('_', ' ')}",
+                "fact_id": fact["id"],
+                "icon": "check",
+            })
+
+    # Analyses
+    analyses_result = (
+        supabase.table("employment_analyses")
+        .select("id, analysis_type, discrepancies_found, created_at")
+        .eq("employment_id", employment_id)
+        .eq("user_id", user["id"])
+        .order("created_at")
+        .execute()
+    )
+    for a in (analyses_result.data or []):
+        disc = a["discrepancies_found"]
+        events.append({
+            "type": "analysis_run",
+            "ts": a["created_at"],
+            "label": f"Krydsdokument-analyse kørt — {disc} afvigelse{'r' if disc != 1 else ''} fundet",
+            "analysis_id": a["id"],
+            "icon": "analysis",
+        })
+
+    # Recommendations
+    recs_result = (
+        supabase.table("employment_recommendations")
+        .select("id, title, severity, status, created_at")
+        .eq("employment_id", employment_id)
+        .eq("user_id", user["id"])
+        .order("created_at")
+        .execute()
+    )
+    for r in (recs_result.data or []):
+        events.append({
+            "type": "recommendation_created",
+            "ts": r["created_at"],
+            "label": f"Anbefaling oprettet: {r['title']}",
+            "recommendation_id": r["id"],
+            "severity": r["severity"],
+            "icon": "alert",
+        })
+        if r["status"] in ("resolved", "dismissed"):
+            events.append({
+                "type": f"recommendation_{r['status']}",
+                "ts": r["created_at"],
+                "label": f"Anbefaling {'løst' if r['status'] == 'resolved' else 'afvist'}: {r['title']}",
+                "recommendation_id": r["id"],
+                "icon": "check" if r["status"] == "resolved" else "dismiss",
+            })
+
+    events.sort(key=lambda e: e["ts"])
+    return {"events": events}

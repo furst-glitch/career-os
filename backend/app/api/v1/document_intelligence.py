@@ -148,14 +148,18 @@ async def analyze_document(
 
         yield _evt("progress", step="saving", pct=30, message="Gemmer dokument...")
 
-        doc_row = supabase.table("coach_documents").insert({
+        doc_insert: dict = {
             "user_id":        user["id"],
             "doc_type":       doc_type,
             "file_name":      file.filename or "document",
             "file_size":      len(content),
             "extracted_text": extracted_text,
             "metadata":       {"source": "document_intelligence"},
-        }).execute()
+        }
+        if employment_id:
+            doc_insert["employment_id"] = employment_id
+
+        doc_row = supabase.table("coach_documents").insert(doc_insert).execute()
 
         if not doc_row.data:
             yield _evt("error", message="Kunne ikke gemme dokumentet — prøv igen")
@@ -240,6 +244,7 @@ class FactUpdateRequest(BaseModel):
     value: str | None = None
     confidence: Literal["high", "medium", "low"] | None = None
     requires_confirmation: bool | None = None
+    reason: str | None = None  # Human verification reason — stored in verification_reason
 
 
 @router.patch("/facts/{fact_id}")
@@ -254,12 +259,14 @@ async def update_fact(
     """
     Human in the Loop: update a fact's value, confidence, or confirmation state.
 
-    Once a user confirms or corrects a fact, requires_confirmation is set to false.
-    User decisions are final — the AI extraction pipeline will not overwrite them.
+    User decisions are final — the AI extraction pipeline never overwrites verified facts.
+    Audit trail: verified_by, verified_at, previous_value, verification_reason saved automatically.
     """
+    from datetime import datetime, timezone
+
     existing = (
         supabase.table("document_facts")
-        .select("id")
+        .select("id, value")
         .eq("id", fact_id)
         .eq("user_id", user["id"])
         .limit(1)
@@ -271,6 +278,8 @@ async def update_fact(
     updates: dict = {}
     if body.value is not None:
         updates["value"] = body.value
+        # Save old value for audit trail
+        updates["previous_value"] = existing.data[0]["value"]
     if body.confidence is not None:
         updates["confidence"] = body.confidence
     if body.requires_confirmation is not None:
@@ -278,6 +287,12 @@ async def update_fact(
 
     if not updates:
         raise HTTPException(422, detail="No fields to update")
+
+    # Mark as human-verified — user decisions always take priority over AI
+    updates["verified_by"] = user["id"]
+    updates["verified_at"] = datetime.now(timezone.utc).isoformat()
+    if body.reason:
+        updates["verification_reason"] = body.reason
 
     result = (
         supabase.table("document_facts")
