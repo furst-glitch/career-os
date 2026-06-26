@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     analytics,
     applications,
+    intelligence,
     # auth,           # SKELETON — auth is handled by Supabase Auth directly; no backend endpoints needed
     billing,
     cache,
@@ -57,3 +58,4 @@ api_router.include_router(document_intelligence.router)
 api_router.include_router(employment_graph.router)
 api_router.include_router(job_discovery.router)
 api_router.include_router(templates.router)
+api_router.include_router(intelligence.router)

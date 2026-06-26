@@ -28,6 +28,13 @@ async def get_current_user(authorization: str = Header(...)) -> dict:
         raise HTTPException(status_code=401, detail="Token kunne ikke valideres")
 
 
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    """Gater adgang til interne admin-endpoints (CTO Dashboard, Intelligence Engine)."""
+    if not settings.admin_email or user.get("email") != settings.admin_email:
+        raise HTTPException(status_code=403, detail="Admin-adgang krævet")
+    return user
+
+
 PLAN_HIERARCHY = {"free": 0, "pro": 1, "professional": 2, "enterprise": 3}
 
 

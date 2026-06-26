@@ -23,6 +23,10 @@ from pydantic import BaseModel
 
 from app.core.deps import get_current_user, get_supabase_admin
 from app.core.rate_limit import LIMIT_COACH, limiter
+from app.services.event_service import (
+    EV_DOC_ANALYZED, EV_DOC_FAILED, EV_DOC_UPLOADED, EV_FACT_VERIFIED,
+    EventService,
+)
 
 logger = logging.getLogger("app.document_intelligence")
 router = APIRouter(prefix="/document-intelligence", tags=["Document Intelligence"])
@@ -115,13 +119,20 @@ async def analyze_document(
     containing the full AnalyzeResponse payload. Embeddings are generated
     as a BackgroundTask after the stream completes (reduces wait from ~20s to ~8s).
     """
+    import time as _time
+
     def _evt(type_: str, **kw: object) -> str:
         return f"data: {_json.dumps({'type': type_, **kw})}\n\n"
 
     async def event_stream():
+        nonlocal employment_id
+        _events = EventService(supabase)
+        t_start = _time.monotonic()
+
         yield _evt("progress", step="validating", pct=5, message="Validerer dokument...")
 
         if doc_type not in _ALLOWED_DOC_TYPES:
+            _events.emit(EV_DOC_FAILED, user_id=user["id"], doc_type=doc_type, error_step="validation", employment_id=employment_id)
             yield _evt("error", message=f"Ugyldig dokumenttype. Tilladt: {', '.join(sorted(_ALLOWED_DOC_TYPES))}")
             return
 
@@ -139,10 +150,12 @@ async def analyze_document(
         try:
             extracted_text = _extract_text(content, file.filename or "")
         except ValueError as exc:
+            _events.emit(EV_DOC_FAILED, user_id=user["id"], doc_type=doc_type, error_step="extraction", employment_id=employment_id)
             yield _evt("error", message=str(exc))
             return
 
         if not extracted_text.strip():
+            _events.emit(EV_DOC_FAILED, user_id=user["id"], doc_type=doc_type, error_step="empty_text", employment_id=employment_id)
             yield _evt("error", message="Kunne ikke udtrække tekst — sikr at PDF'en har et tekstlag (ikke skannet billede)")
             return
 
@@ -167,6 +180,16 @@ async def analyze_document(
 
         document_id: str = doc_row.data[0]["id"]
 
+        # WP1: Emit document.uploaded after save
+        _events.emit(
+            EV_DOC_UPLOADED,
+            user_id=user["id"],
+            document_id=document_id,
+            employment_id=employment_id,
+            doc_type=doc_type,
+            file_size=len(content),
+        )
+
         yield _evt("progress", step="ai", pct=45, message="AI analyserer fakta (tager typisk 10-20 sekunder)...")
 
         from app.core.config import settings
@@ -187,12 +210,29 @@ async def analyze_document(
             )
         except Exception as exc:
             logger.error("document_intelligence_failed document=%s error=%s", document_id, exc, exc_info=True)
+            _events.emit(EV_DOC_FAILED, user_id=user["id"], document_id=document_id, doc_type=doc_type, error_step="ai_analysis", employment_id=employment_id)
             yield _evt("error", message="Dokumentanalyse fejlede — prøv igen")
             return
 
         # Embeddings run after the stream is fully sent (BackgroundTasks fire after generator exhausts)
         if summary.pending_embeddings:
             background_tasks.add_task(svc.compute_pending_embeddings, summary.pending_embeddings)
+
+        # WP1: Emit document.analyzed with full metrics
+        duration_ms = round((_time.monotonic() - t_start) * 1000)
+        _events.emit(
+            EV_DOC_ANALYZED,
+            user_id=user["id"],
+            document_id=document_id,
+            employment_id=employment_id,
+            doc_type=doc_type,
+            facts_total=summary.facts_total,
+            facts_high=summary.facts_high,
+            facts_medium=summary.facts_medium,
+            facts_low=summary.facts_low,
+            memories_created=summary.memories_created,
+            duration_ms=duration_ms,
+        )
 
         yield _evt(
             "progress", step="storing", pct=88,
@@ -266,7 +306,7 @@ async def update_fact(
 
     existing = (
         supabase.table("document_facts")
-        .select("id, value")
+        .select("id, value, fact_type, employment_id")
         .eq("id", fact_id)
         .eq("user_id", user["id"])
         .limit(1)
@@ -303,4 +343,16 @@ async def update_fact(
     )
     if not result.data:
         raise HTTPException(500, detail="Update failed")
+
+    # WP1: Emit fact.verified event
+    existing_row = existing.data[0]
+    EventService(supabase).emit(
+        EV_FACT_VERIFIED,
+        user_id=user["id"],
+        employment_id=existing_row.get("employment_id"),
+        fact_type=existing_row.get("fact_type"),
+        had_value_change=body.value is not None,
+        confidence=body.confidence or result.data[0].get("confidence"),
+    )
+
     return result.data[0]

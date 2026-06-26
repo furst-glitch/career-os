@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str | None = None
 
+    # Platform Intelligence Engine — admin adgang til interne dashboards og CTO-rapporter
+    admin_email: str = ""
+
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:3001"]
     # Regex for dynamiske origins — dækker alle Vercel preview-deployments automatisk

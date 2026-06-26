@@ -23,6 +23,10 @@ from pydantic import BaseModel
 
 from app.core.deps import get_current_user, get_supabase_admin
 from app.core.rate_limit import LIMIT_COACH, limiter
+from app.services.event_service import (
+    EV_CHAT_COMPLETED, EV_EMPLOYMENT_CREATED, EV_REC_DISMISSED, EV_REC_RESOLVED,
+    EventService,
+)
 from app.services.cross_document_analysis_service import CrossDocumentAnalysisService
 from app.services.employment_graph_service import EmploymentGraphService
 from app.services.employment_resolver import EmploymentResolverService
@@ -258,6 +262,15 @@ async def create_employment(
     result = supabase.table("experiences").insert(row).execute()
     if not result.data:
         raise HTTPException(500, detail="Failed to create employment")
+
+    # WP1: Emit employment.created event
+    EventService(supabase).emit(
+        EV_EMPLOYMENT_CREATED,
+        user_id=user["id"],
+        employment_id=result.data[0]["id"],
+        experience_type=body.experience_type,
+    )
+
     return result.data[0]
 
 
@@ -297,7 +310,19 @@ async def update_recommendation(
     )
     if not result.data:
         raise HTTPException(500, detail="Update failed")
-    return result.data[0]
+
+    # WP1: Emit recommendation.resolved or recommendation.dismissed
+    rec_data = result.data[0]
+    ev_type = EV_REC_RESOLVED if body.status == "resolved" else EV_REC_DISMISSED
+    EventService(supabase).emit(
+        ev_type,
+        user_id=user["id"],
+        employment_id=rec_data.get("employment_id"),
+        recommendation_type=rec_data.get("recommendation_type"),
+        severity=rec_data.get("severity"),
+    )
+
+    return rec_data
 
 
 @router.get("/{employment_id}", response_model=dict)
@@ -416,6 +441,7 @@ async def chat_with_employment(
     The AI agent never looks up data itself; all context is pre-built here.
     """
     import asyncio
+    import time as _time
 
     from app.agents.employment_chat_agent import EmploymentChatAgent
     from app.providers.litellm_provider import NoProviderKeyError
@@ -435,6 +461,7 @@ async def chat_with_employment(
     _DOC_TYPE_LABELS = {"contract": "Kontrakt", "payslip": "Lønseddel", "agreement": "Overenskomst", "pension": "Pensionsopgørelse"}
 
     async def event_stream():
+        _chat_start = _time.monotonic()
         # WP6: Emit context event first so frontend can show "Baseret på" references
         based_on = {
             "documents": [
@@ -485,6 +512,14 @@ async def chat_with_employment(
                 if kind == "done":
                     # WP6: include based_on in done payload so frontend can show references
                     yield f"data: {_json.dumps({'type': 'done', 'based_on': based_on})}\n\n"
+                    # WP1: Emit chat.completed event
+                    EventService(supabase).emit(
+                        EV_CHAT_COMPLETED,
+                        user_id=user["id"],
+                        employment_id=employment_id,
+                        duration_ms=round((_time.monotonic() - _chat_start) * 1000),
+                        facts_used=len(graph.facts),
+                    )
                     break
                 yield f"data: {payload}\n\n"
         finally:
