@@ -129,6 +129,76 @@ export type UploadProgressEvent = {
   message: string;
 };
 
+/**
+ * Upload a file with additional form fields and receive SSE progress events.
+ * Returns the final result from the "done" event.
+ */
+export async function apiUploadStreamWithFields<T>(
+  path: string,
+  file: File,
+  fields: Record<string, string>,
+  onProgress: (evt: UploadProgressEvent) => void,
+): Promise<T> {
+  const headers = await getAuthHeader();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mime = file.type || EXT_MIME[ext] || "application/octet-stream";
+  const fileWithType = mime !== file.type ? new File([file], file.name, { type: mime }) : file;
+  const form = new FormData();
+  form.append("file", fileWithType);
+  for (const [key, value] of Object.entries(fields)) {
+    form.append(key, value);
+  }
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text || `API ${path}: ${res.status}`);
+  }
+  if (!res.body) throw new Error("Ingen svar fra serveren");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const line = event.trim();
+      if (line.startsWith(":")) continue;
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6);
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (payload.type === "progress") {
+        onProgress({
+          step: payload.step as string,
+          pct: payload.pct as number,
+          message: payload.message as string,
+        });
+      } else if (payload.type === "done") {
+        return payload.data as T;
+      } else if (payload.type === "error") {
+        throw new Error((payload.message as string) || "Upload mislykkedes");
+      }
+    }
+  }
+  throw new Error("Ingen resultat modtaget fra serveren");
+}
+
 /** Upload file and receive SSE progress events. Returns the final result from the "done" event. */
 export async function apiUploadStream<T>(
   path: string,

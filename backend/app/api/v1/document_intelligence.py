@@ -13,10 +13,12 @@ GET  /document-intelligence/facts/{document_id}
 from __future__ import annotations
 
 import io
+import json as _json
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.deps import get_current_user, get_supabase_admin
@@ -25,7 +27,7 @@ from app.core.rate_limit import LIMIT_COACH, limiter
 logger = logging.getLogger("app.document_intelligence")
 router = APIRouter(prefix="/document-intelligence", tags=["Document Intelligence"])
 
-_ALLOWED_DOC_TYPES = frozenset({"contract", "agreement", "payslip"})
+_ALLOWED_DOC_TYPES = frozenset({"contract", "agreement", "payslip", "pension"})
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
@@ -95,11 +97,12 @@ class FactItem(BaseModel):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
-@router.post("/analyze", response_model=AnalyzeResponse)
+@router.post("/analyze")
 @limiter.limit(LIMIT_COACH)
 async def analyze_document(
     request: Request,
-    doc_type: str = Form(..., description="contract | agreement | payslip"),
+    background_tasks: BackgroundTasks,
+    doc_type: str = Form(..., description="contract | agreement | payslip | pension"),
     file: UploadFile = File(...),
     employment_id: str | None = Form(None, description="Optional FK to experiences table (Work Graph)"),
     user=Depends(get_current_user),
@@ -108,87 +111,108 @@ async def analyze_document(
     """
     Upload a document and extract structured facts into Memory and Work Graph.
 
-    Runs the full Document Intelligence pipeline:
-    1. Extract text (PDF/DOCX/TXT)
-    2. Fact extraction via AI Gateway (typed facts + confidence + provenance)
-    3. Store all facts in document_facts (with provenance)
-    4. Store high/medium facts as career_memories (vector-searchable by agents)
+    Returns an SSE stream with progress events, then a final "done" event
+    containing the full AnalyzeResponse payload. Embeddings are generated
+    as a BackgroundTask after the stream completes (reduces wait from ~20s to ~8s).
     """
-    if doc_type not in _ALLOWED_DOC_TYPES:
-        raise HTTPException(
-            422,
-            detail=f"doc_type must be one of: {', '.join(sorted(_ALLOWED_DOC_TYPES))}",
+    def _evt(type_: str, **kw: object) -> str:
+        return f"data: {_json.dumps({'type': type_, **kw})}\n\n"
+
+    async def event_stream():
+        yield _evt("progress", step="validating", pct=5, message="Validerer dokument...")
+
+        if doc_type not in _ALLOWED_DOC_TYPES:
+            yield _evt("error", message=f"Ugyldig dokumenttype. Tilladt: {', '.join(sorted(_ALLOWED_DOC_TYPES))}")
+            return
+
+        if file.size and file.size > _MAX_FILE_BYTES:
+            yield _evt("error", message="Filen er for stor — maks 10 MB")
+            return
+
+        content = await file.read()
+        if len(content) > _MAX_FILE_BYTES:
+            yield _evt("error", message="Filen er for stor — maks 10 MB")
+            return
+
+        yield _evt("progress", step="extracting", pct=20, message="Udtrækker tekst fra dokument...")
+
+        try:
+            extracted_text = _extract_text(content, file.filename or "")
+        except ValueError as exc:
+            yield _evt("error", message=str(exc))
+            return
+
+        if not extracted_text.strip():
+            yield _evt("error", message="Kunne ikke udtrække tekst — sikr at PDF'en har et tekstlag (ikke skannet billede)")
+            return
+
+        yield _evt("progress", step="saving", pct=30, message="Gemmer dokument...")
+
+        doc_row = supabase.table("coach_documents").insert({
+            "user_id":        user["id"],
+            "doc_type":       doc_type,
+            "file_name":      file.filename or "document",
+            "file_size":      len(content),
+            "extracted_text": extracted_text,
+            "metadata":       {"source": "document_intelligence"},
+        }).execute()
+
+        if not doc_row.data:
+            yield _evt("error", message="Kunne ikke gemme dokumentet — prøv igen")
+            return
+
+        document_id: str = doc_row.data[0]["id"]
+
+        yield _evt("progress", step="ai", pct=45, message="AI analyserer fakta (tager typisk 10-20 sekunder)...")
+
+        from app.core.config import settings
+        from app.services.document_intelligence_service import DocumentIntelligenceService
+        from app.services.embedding_service import EmbeddingService
+
+        embedding_svc = EmbeddingService.from_settings(settings)
+        svc = DocumentIntelligenceService(supabase=supabase, embedding_service=embedding_svc)
+
+        try:
+            summary = await svc.analyze(
+                document_id=document_id,
+                doc_type=doc_type,
+                extracted_text=extracted_text,
+                user_id=user["id"],
+                employment_id=employment_id,
+                defer_embeddings=True,
+            )
+        except Exception as exc:
+            logger.error("document_intelligence_failed document=%s error=%s", document_id, exc, exc_info=True)
+            yield _evt("error", message="Dokumentanalyse fejlede — prøv igen")
+            return
+
+        # Embeddings run after the stream is fully sent (BackgroundTasks fire after generator exhausts)
+        if summary.pending_embeddings:
+            background_tasks.add_task(svc.compute_pending_embeddings, summary.pending_embeddings)
+
+        yield _evt(
+            "progress", step="storing", pct=88,
+            message=f"{summary.facts_total} fakta gemt — søgeindeks opdateres i baggrunden...",
         )
+        yield _evt("done", data={
+            "extraction_run_id":          summary.extraction_run_id,
+            "document_id":                document_id,
+            "facts_total":                summary.facts_total,
+            "facts_high":                 summary.facts_high,
+            "facts_medium":               summary.facts_medium,
+            "facts_low":                  summary.facts_low,
+            "facts_requiring_confirmation": summary.facts_requiring_confirmation,
+            "memories_created":           summary.memories_created,
+            "document_summary":           summary.document_summary,
+            "extraction_quality":         summary.extraction_quality,
+            "model_used":                 summary.model_used,
+            "warnings":                   summary.warnings,
+        })
 
-    # Check size before reading to prevent memory exhaustion on large uploads
-    if file.size and file.size > _MAX_FILE_BYTES:
-        raise HTTPException(413, detail="Filen er for stor — maks 10 MB")
-
-    content = await file.read()
-    if len(content) > _MAX_FILE_BYTES:
-        raise HTTPException(413, detail="Filen er for stor — maks 10 MB")
-
-    # 1. Extract text
-    try:
-        extracted_text = _extract_text(content, file.filename or "")
-    except ValueError as exc:
-        raise HTTPException(422, detail=str(exc))
-    if not extracted_text.strip():
-        raise HTTPException(
-            422,
-            detail="Kunne ikke udtrække tekst fra dokumentet. Sikr at PDF'en har et tekstlag (ikke skannet billede).",
-        )
-
-    # 2. Persist document in coach_documents (source of truth for provenance)
-    doc_row = supabase.table("coach_documents").insert({
-        "user_id":        user["id"],
-        "doc_type":       doc_type,
-        "file_name":      file.filename or "document",
-        "file_size":      len(content),
-        "extracted_text": extracted_text,
-        "metadata":       {"source": "document_intelligence"},
-    }).execute()
-
-    if not doc_row.data:
-        raise HTTPException(500, detail="Failed to save document metadata")
-
-    document_id: str = doc_row.data[0]["id"]
-
-    # 3. Run pipeline
-    from app.core.config import settings
-    from app.services.document_intelligence_service import DocumentIntelligenceService
-    from app.services.embedding_service import EmbeddingService
-
-    embedding_svc = EmbeddingService.from_settings(settings)
-    svc = DocumentIntelligenceService(supabase=supabase, embedding_service=embedding_svc)
-
-    try:
-        summary = await svc.analyze(
-            document_id=document_id,
-            doc_type=doc_type,
-            extracted_text=extracted_text,
-            user_id=user["id"],
-            employment_id=employment_id,
-        )
-    except Exception as exc:
-        logger.error(
-            "document_intelligence_failed document=%s error=%s", document_id, exc
-        )
-        raise HTTPException(500, detail="Dokumentanalyse fejlede — prøv igen")
-
-    return AnalyzeResponse(
-        extraction_run_id=summary.extraction_run_id,
-        document_id=document_id,
-        facts_total=summary.facts_total,
-        facts_high=summary.facts_high,
-        facts_medium=summary.facts_medium,
-        facts_low=summary.facts_low,
-        facts_requiring_confirmation=summary.facts_requiring_confirmation,
-        memories_created=summary.memories_created,
-        document_summary=summary.document_summary,
-        extraction_quality=summary.extraction_quality,
-        model_used=summary.model_used,
-        warnings=summary.warnings,
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
 

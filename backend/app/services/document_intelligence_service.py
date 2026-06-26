@@ -82,6 +82,7 @@ _DOC_LABELS: dict[str, str] = {
     "contract":  "Ansættelseskontrakt",
     "agreement": "Overenskomst",
     "payslip":   "Lønseddel",
+    "pension":   "Pensionsopgørelse",
 }
 
 # Relevance scores for career_memories (higher = more prominent in snapshots)
@@ -105,6 +106,8 @@ class ExtractionSummary:
     extraction_quality: str
     model_used: str
     warnings: list[str] = field(default_factory=list)
+    # Populated only when analyze() is called with defer_embeddings=True
+    pending_embeddings: list[tuple[str, str]] = field(default_factory=list, repr=False)
 
 
 class DocumentIntelligenceService:
@@ -130,6 +133,7 @@ class DocumentIntelligenceService:
         extracted_text: str,
         user_id: str,
         employment_id: str | None = None,
+        defer_embeddings: bool = False,
     ) -> ExtractionSummary:
         """
         Run the complete Document Intelligence pipeline.
@@ -161,6 +165,7 @@ class DocumentIntelligenceService:
         memory_svc = MemoryService(self._supabase)
         doc_label = _DOC_LABELS.get(doc_type, doc_type)
         memories_created = 0
+        pending: list[tuple[str, str]] = []
 
         # ── 2. Persist each fact ─────────────────────────────────────────────
         for fact in result.facts:
@@ -192,14 +197,18 @@ class DocumentIntelligenceService:
                     career_memory_id = memory["id"]
                     memories_created += 1
 
-                    # 4. Generate embedding for vector search
-                    embedding = await self._embedding.embed(memory_content)
-                    if embedding:
-                        memory_svc.update_embedding(career_memory_id, embedding)
+                    if defer_embeddings:
+                        # Embeddings generated later as a background task
+                        pending.append((career_memory_id, memory_content))
                     else:
-                        logger.debug(
-                            "embedding_skipped run=%s fact=%s", run_id, fact.fact_type
-                        )
+                        # 4. Generate embedding for vector search (inline)
+                        embedding = await self._embedding.embed(memory_content)
+                        if embedding:
+                            memory_svc.update_embedding(career_memory_id, embedding)
+                        else:
+                            logger.debug(
+                                "embedding_skipped run=%s fact=%s", run_id, fact.fact_type
+                            )
 
                 except Exception as exc:
                     logger.warning(
@@ -247,6 +256,7 @@ class DocumentIntelligenceService:
             extraction_quality=result.extraction_quality,
             model_used=_DEFAULT_AI_MODEL,
             warnings=warnings,
+            pending_embeddings=pending,
         )
 
         logger.info(
@@ -255,6 +265,17 @@ class DocumentIntelligenceService:
         )
 
         return summary
+
+    async def compute_pending_embeddings(self, pending: list[tuple[str, str]]) -> None:
+        """Generate and store embeddings for memories created with defer_embeddings=True."""
+        memory_svc = MemoryService(self._supabase)
+        for memory_id, content in pending:
+            try:
+                embedding = await self._embedding.embed(content)
+                if embedding:
+                    memory_svc.update_embedding(memory_id, embedding)
+            except Exception as exc:
+                logger.warning("background_embedding_failed memory=%s error=%s", memory_id, exc)
 
     async def list_facts(self, *, document_id: str, user_id: str) -> list[dict]:
         """List all extracted facts for a document (ordered by confidence desc)."""

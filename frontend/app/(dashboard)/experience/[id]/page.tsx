@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { apiGet, apiPost, apiPatch, apiStream, apiUploadWithFields } from "@/lib/api";
+import { apiGet, apiPost, apiPatch, apiStream, apiUploadStreamWithFields, UploadProgressEvent } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -75,11 +75,20 @@ const CONFIDENCE_BADGE: Record<string, string> = {
   low: "bg-red-100 text-red-800",
 };
 
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high: "Høj", medium: "Middel", low: "Lav",
+};
+
 const SEVERITY_BADGE: Record<string, string> = {
+  critical: "bg-red-200 text-red-900",
   high: "bg-red-100 text-red-800",
   medium: "bg-orange-100 text-orange-800",
   low: "bg-gray-100 text-gray-700",
   info: "bg-blue-100 text-blue-800",
+};
+
+const SEVERITY_LABELS: Record<string, string> = {
+  critical: "Kritisk", high: "Høj", medium: "Middel", low: "Lav", info: "Info",
 };
 
 function formatDate(d: string | null): string {
@@ -107,18 +116,23 @@ function DocumentsTab({
   const [file, setFile] = useState<File | null>(null);
   const [docType, setDocType] = useState("contract");
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<UploadProgressEvent | null>(null);
   const [error, setError] = useState("");
 
   async function upload() {
     if (!file) return;
     setUploading(true);
+    setProgress(null);
     setError("");
     try {
-      await apiUploadWithFields<unknown>("/document-intelligence/analyze", file, {
-        doc_type: docType,
-        employment_id: employmentId,
-      });
+      await apiUploadStreamWithFields<unknown>(
+        "/document-intelligence/analyze",
+        file,
+        { doc_type: docType, employment_id: employmentId },
+        (evt) => setProgress(evt),
+      );
       setFile(null);
+      setProgress(null);
       await onRefresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload fejlede");
@@ -131,6 +145,7 @@ function DocumentsTab({
     contract: "Kontrakt",
     payslip: "Lønseddel",
     agreement: "Overenskomst",
+    pension: "Pensionsopgørelse",
   };
 
   return (
@@ -148,6 +163,7 @@ function DocumentsTab({
               <option value="contract">Kontrakt</option>
               <option value="payslip">Lønseddel</option>
               <option value="agreement">Overenskomst</option>
+              <option value="pension">Pensionsopgørelse</option>
             </select>
           </div>
           <div>
@@ -168,10 +184,22 @@ function DocumentsTab({
           </button>
         </div>
         {error && <p className="text-red-600 text-sm">{error}</p>}
-        {uploading && (
-          <p className="text-gray-500 text-sm">
-            AI ekstraherer fakta fra dokumentet — dette tager 10–30 sekunder...
-          </p>
+        {uploading && progress && (
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>{progress.message}</span>
+              <span>{progress.pct}%</span>
+            </div>
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                style={{ width: `${progress.pct}%` }}
+              />
+            </div>
+          </div>
+        )}
+        {uploading && !progress && (
+          <p className="text-gray-500 text-sm text-xs">Forbinder til server...</p>
         )}
       </div>
 
@@ -278,7 +306,7 @@ function FactsTab({ graph, onRefresh }: { graph: Graph; onRefresh: () => Promise
                     CONFIDENCE_BADGE[fact.confidence] ?? "bg-gray-100"
                   }`}
                 >
-                  {fact.confidence}
+                  {CONFIDENCE_LABELS[fact.confidence] ?? fact.confidence}
                 </span>
                 {fact.requires_confirmation && (
                   <span className="px-1.5 py-0.5 rounded text-xs bg-yellow-200 text-yellow-900">
@@ -462,7 +490,7 @@ function AnalysisTab({
                         SEVERITY_BADGE[rec.severity] ?? "bg-gray-100"
                       }`}
                     >
-                      {rec.severity}
+                      {SEVERITY_LABELS[rec.severity] ?? rec.severity}
                     </span>
                     <span className="text-sm font-medium">{rec.title}</span>
                   </div>

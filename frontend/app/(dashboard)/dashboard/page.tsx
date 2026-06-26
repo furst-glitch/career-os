@@ -194,6 +194,10 @@ export default function DashboardPage() {
   const s = summary;
   const a = analytics;
 
+  const isNewUser = a
+    ? a.applications.total === 0 && a.jobs.total === 0 && !a.cv.has_master_cv
+    : false;
+
   return (
     <div className="space-y-8">
       {/* Page header */}
@@ -201,6 +205,50 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-500">Dit karriere-overblik i realtid</p>
       </div>
+
+      {/* ── Onboarding guide (new users only) ── */}
+      {isNewUser && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-6">
+          <h2 className="text-base font-semibold text-blue-900 mb-1">Kom i gang på 3 trin</h2>
+          <p className="text-sm text-blue-700 mb-4">
+            Velkommen til CareerOS! Her er hvad du kan gøre først:
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                step: "1",
+                title: "Generer dit Master CV",
+                desc: "Upload dit eksisterende CV og lad AI optimere det.",
+                href: "/cv",
+                cta: "Gå til CV Studio →",
+              },
+              {
+                step: "2",
+                title: "Find relevante jobs",
+                desc: "Søg job og se AI-matchscore baseret på din profil.",
+                href: "/jobs",
+                cta: "Søg jobs →",
+              },
+              {
+                step: "3",
+                title: "Analyser din kontrakt",
+                desc: "Upload ansættelseskontrakt og få AI til at finde vigtige fakta.",
+                href: "/experience",
+                cta: "Gå til Arbejdsliv →",
+              },
+            ].map(({ step, title, desc, href, cta }) => (
+              <Link key={step} href={href} className="block rounded-lg bg-white border border-blue-100 p-4 hover:border-blue-300 transition-colors">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white text-xs font-bold mb-2">
+                  {step}
+                </span>
+                <p className="text-sm font-medium text-slate-800">{title}</p>
+                <p className="text-xs text-slate-500 mt-0.5 mb-2">{desc}</p>
+                <span className="text-xs text-blue-600 font-medium">{cta}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Stat row ── */}
       {a && (
