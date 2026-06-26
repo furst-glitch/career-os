@@ -38,6 +38,10 @@ def _extract_text(file_bytes: bytes, filename: str) -> str:
     try:
         if name.endswith(".pdf"):
             import pdfplumber
+            import pdfplumber.utils
+            if not file_bytes.startswith(b"%PDF"):
+                logger.warning("invalid_pdf_magic_bytes file=%s", filename)
+                return ""
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                 pages = [page.extract_text() or "" for page in pdf.pages]
             return "\n".join(p for p in pages if p.strip())
@@ -48,8 +52,12 @@ def _extract_text(file_bytes: bytes, filename: str) -> str:
         else:
             return file_bytes.decode("utf-8", errors="replace")
     except Exception as exc:
+        exc_name = type(exc).__name__
+        if "NotPermitted" in exc_name or "PermissionError" in exc_name or "encrypted" in str(exc).lower():
+            logger.warning("pdf_protected file=%s error=%s", filename, exc)
+            raise ValueError("PDF er kodeordsbeskyttet — fjern kodeordet og prøv igen")
         logger.warning("text_extraction_failed file=%s error=%s", filename, exc)
-        return file_bytes.decode("utf-8", errors="replace")
+        return ""
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -112,16 +120,23 @@ async def analyze_document(
             detail=f"doc_type must be one of: {', '.join(sorted(_ALLOWED_DOC_TYPES))}",
         )
 
+    # Check size before reading to prevent memory exhaustion on large uploads
+    if file.size and file.size > _MAX_FILE_BYTES:
+        raise HTTPException(413, detail="Filen er for stor — maks 10 MB")
+
     content = await file.read()
     if len(content) > _MAX_FILE_BYTES:
-        raise HTTPException(413, detail="File exceeds 10 MB limit")
+        raise HTTPException(413, detail="Filen er for stor — maks 10 MB")
 
     # 1. Extract text
-    extracted_text = _extract_text(content, file.filename or "")
+    try:
+        extracted_text = _extract_text(content, file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(422, detail=str(exc))
     if not extracted_text.strip():
         raise HTTPException(
             422,
-            detail="Could not extract text from document. Ensure the PDF has a text layer.",
+            detail="Kunne ikke udtrække tekst fra dokumentet. Sikr at PDF'en har et tekstlag (ikke skannet billede).",
         )
 
     # 2. Persist document in coach_documents (source of truth for provenance)

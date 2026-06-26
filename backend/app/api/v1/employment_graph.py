@@ -169,8 +169,10 @@ class EmploymentChatRequest(BaseModel):
 
 
 @router.post("/resolve", response_model=ResolveResponse)
+@limiter.limit(LIMIT_COACH)
 async def resolve_employment(
-    request: ResolveRequest,
+    request: Request,
+    body: ResolveRequest,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
@@ -184,9 +186,9 @@ async def resolve_employment(
     svc = EmploymentResolverService(supabase)
     result = await svc.resolve(
         user_id=user["id"],
-        employer_name=request.employer_name,
-        job_title=request.job_title,
-        period_start=request.period_start,
+        employer_name=body.employer_name,
+        job_title=body.job_title,
+        period_start=body.period_start,
     )
     return ResolveResponse(
         status=result.status,
@@ -209,7 +211,9 @@ async def resolve_employment(
 
 
 @router.get("/employments")
+@limiter.limit(LIMIT_COACH)
 async def list_employments(
+    request: Request,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
 ):
@@ -226,7 +230,9 @@ async def list_employments(
 
 
 @router.post("/employments", status_code=201)
+@limiter.limit(LIMIT_COACH)
 async def create_employment(
+    request: Request,
     body: EmploymentIn,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -256,7 +262,9 @@ async def create_employment(
 
 
 @router.patch("/recommendations/{rec_id}")
+@limiter.limit(LIMIT_COACH)
 async def update_recommendation(
+    request: Request,
     rec_id: str,
     body: RecommendationUpdateRequest,
     user=Depends(get_current_user),
@@ -293,7 +301,9 @@ async def update_recommendation(
 
 
 @router.get("/{employment_id}", response_model=dict)
+@limiter.limit(LIMIT_COACH)
 async def get_employment_graph(
+    request: Request,
     employment_id: str,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -321,7 +331,9 @@ async def get_employment_graph(
 
 
 @router.post("/{employment_id}/analyze", response_model=AnalyzeResponse)
+@limiter.limit(LIMIT_COACH)
 async def analyze_employment(
+    request: Request,
     employment_id: str,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -357,7 +369,9 @@ async def analyze_employment(
 
 
 @router.get("/{employment_id}/recommendations", response_model=RecommendationsResponse)
+@limiter.limit(LIMIT_COACH)
 async def get_recommendations(
+    request: Request,
     employment_id: str,
     user=Depends(get_current_user),
     supabase=Depends(get_supabase_admin),
@@ -406,6 +420,10 @@ async def chat_with_employment(
     from app.agents.employment_chat_agent import EmploymentChatAgent
     from app.providers.litellm_provider import NoProviderKeyError
 
+    user_messages = [m for m in body.messages if m.get("role") == "user" and m.get("content")]
+    if not user_messages:
+        raise HTTPException(422, detail="Besked er påkrævet")
+
     svc = EmploymentGraphService(supabase)
     graph = await svc.get_graph(user_id=user["id"], employment_id=employment_id)
     if graph is None:
@@ -430,8 +448,8 @@ async def chat_with_employment(
             except asyncio.CancelledError:
                 pass
             except Exception as exc:
-                logger.error("employment_chat_error employment=%s error=%s", employment_id, exc)
-                await queue.put(("data", _json.dumps({"type": "error", "content": str(exc)})))
+                logger.error("employment_chat_error employment=%s error=%s", employment_id, exc, exc_info=True)
+                await queue.put(("data", _json.dumps({"type": "error", "content": "AI-svar fejlede — prøv igen"})))
             finally:
                 try:
                     queue.put_nowait(("done", ""))
