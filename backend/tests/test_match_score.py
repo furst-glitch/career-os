@@ -108,7 +108,7 @@ def test_no_false_positive():
 
 # ── compute_match_score tests ─────────────────────────────────────────────────
 
-def test_facility_teamleder_job_high_score():
+async def test_facility_teamleder_job_high_score():
     """Facility/Procurement-profil skal score højt på 'Teamleder Facility Management' job."""
     svc = _svc()
     job = {
@@ -126,11 +126,11 @@ def test_facility_teamleder_job_high_score():
         ],
         "company": "ISS Danmark",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     assert result["total"] >= 50, f"Forventede ≥50, fik {result['total']} — breakdown: {result['breakdown']}"
 
 
-def test_irrelevant_job_low_score():
+async def test_irrelevant_job_low_score():
     """Facility-profil skal score lavt på et software-engineering job."""
     svc = _svc()
     job = {
@@ -139,11 +139,11 @@ def test_irrelevant_job_low_score():
         "requirements": ["Go", "Rust", "Kubernetes", "Docker", "gRPC"],
         "company": "TechStartup ApS",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     assert result["total"] <= 25, f"Forventede ≤25, fik {result['total']} — breakdown: {result['breakdown']}"
 
 
-def test_procurement_job_good_score():
+async def test_procurement_job_good_score():
     """Profil med Procurement/ESG skal score højt på Indkøbschef job."""
     svc = _svc()
     job = {
@@ -155,13 +155,13 @@ def test_procurement_job_good_score():
         "requirements": ["Procurement", "ESG", "Leverandørstyring", "Budgetansvar"],
         "company": "Grundfos",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     # Profil-signal er lavt da target_title er "Business Partner/Facility" ikke "Indkøbschef"
     # — men skills+erfaring+præferencer giver solid score
     assert result["total"] >= 38, f"Forventede ≥38, fik {result['total']} — breakdown: {result['breakdown']}"
 
 
-def test_empty_profile_low_but_not_zero():
+async def test_empty_profile_low_but_not_zero():
     """Profil uden skills/erfaring skal score lavt men ikke fejle."""
     svc = _svc()
     job = {
@@ -170,12 +170,12 @@ def test_empty_profile_low_but_not_zero():
         "requirements": ["Ledelse", "Facility Management"],
         "company": "CBRE",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_EMPTY_SKILLS)
+    result = await svc.compute_match_score(job, SNAPSHOT_EMPTY_SKILLS)
     assert isinstance(result["total"], float)
     assert 0 <= result["total"] <= 100
 
 
-def test_target_title_boost():
+async def test_target_title_boost():
     """target_title 'Business Partner' skal give boost på Business Partner job."""
     svc = _svc()
     job = {
@@ -184,11 +184,11 @@ def test_target_title_boost():
         "requirements": ["Business Partner erfaring", "Strategisk rådgivning"],
         "company": "Velux",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     assert result["total"] >= 35, f"target_title boost forventet ≥35, fik {result['total']}"
 
 
-def test_score_is_bounded():
+async def test_score_is_bounded():
     """Score skal altid være 0-100."""
     svc = _svc()
     job = {
@@ -198,13 +198,13 @@ def test_score_is_bounded():
                          "Budgetansvar", "Leverandørstyring", "Business Partner"],
         "company": "Test A/S",
     }
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     assert 0 <= result["total"] <= 100
 
 
-def test_breakdown_keys_present():
+async def test_breakdown_keys_present():
     """Breakdown skal indeholde de forventede nøgler."""
     svc = _svc()
     job = {"title": "Test", "description": "", "requirements": [], "company": ""}
-    result = svc.compute_match_score(job, SNAPSHOT_FULL)
+    result = await svc.compute_match_score(job, SNAPSHOT_FULL)
     assert set(result["breakdown"].keys()) >= {"skills", "experience", "preferences", "certifications"}
