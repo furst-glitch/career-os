@@ -384,6 +384,13 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         <CompletenessScore compact={false} refreshKey={pathname} />
       </div>
 
+      {/* Legal links */}
+      <div className="px-4 pb-2 flex gap-3 flex-wrap">
+        <Link href="/privacy" className="text-[10px] text-slate-600 hover:text-slate-400">Privatlivspolitik</Link>
+        <Link href="/terms" className="text-[10px] text-slate-600 hover:text-slate-400">Vilkår</Link>
+        <Link href="/cookies" className="text-[10px] text-slate-600 hover:text-slate-400">Cookies</Link>
+      </div>
+
       {/* User + notification bell */}
       <div className="border-t border-slate-800 px-4 py-3">
         <div className="flex items-center justify-between gap-2">

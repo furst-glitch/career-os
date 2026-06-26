@@ -97,6 +97,13 @@ export default function SignupPage() {
         Opret konto
       </Button>
 
+      <p className="text-center text-xs text-slate-400 leading-relaxed">
+        Ved at oprette en konto accepterer du vores{" "}
+        <Link href="/terms" className="underline hover:text-slate-600">Brugsbetingelser</Link>
+        {" "}og{" "}
+        <Link href="/privacy" className="underline hover:text-slate-600">Privatlivspolitik</Link>.
+      </p>
+
       <p className="text-center text-sm text-slate-500">
         Har du allerede en konto?{" "}
         <Link

@@ -570,6 +570,12 @@ function BillingTab() {
       {isFreePlan && (
         <div className="space-y-3">
           <h3 className="font-semibold text-slate-800">Opgrader din plan</h3>
+          <p className="text-xs text-slate-400">
+            Ved køb accepterer du vores{" "}
+            <a href="/terms" target="_blank" className="underline hover:text-slate-600">Brugsbetingelser</a>
+            {" "}og{" "}
+            <a href="/privacy" target="_blank" className="underline hover:text-slate-600">Privatlivspolitik</a>.
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {(["pro", "professional"] as const).map((key) => {
               const p = plans[key];
