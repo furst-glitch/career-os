@@ -4,7 +4,7 @@ from app.api.v1 import (
     analytics,
     applications,
     # auth,           # SKELETON — auth is handled by Supabase Auth directly; no backend endpoints needed
-    # billing,        # SKELETON — Stripe webhook/portal not yet implemented
+    billing,
     cache,
     career_coach,
     cv,
@@ -47,7 +47,7 @@ api_router.include_router(applications.router)
 # search.router is intentionally not registered — module is skeleton only
 # salary.router is intentionally not registered — module is skeleton only
 # review.router is intentionally not registered — module is skeleton only
-# billing.router is intentionally not registered — module is skeleton only
+api_router.include_router(billing.router)
 # gdpr.router is intentionally not registered — module is skeleton only
 api_router.include_router(providers.router)
 api_router.include_router(export.router)

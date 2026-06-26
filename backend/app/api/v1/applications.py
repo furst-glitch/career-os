@@ -106,7 +106,9 @@ async def create_application(
     except Exception as exc:
         if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
             raise HTTPException(409, "Der er allerede en ansøgning for dette job")
-        raise HTTPException(500, str(exc))
+        import logging as _log
+        _log.getLogger("app.applications").error("application_create_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Ansøgningen kunne ikke oprettes — prøv igen")
     return app
 
 

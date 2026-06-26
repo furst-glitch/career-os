@@ -149,7 +149,10 @@ async def diagnose_chain(user=Depends(get_current_user)):
 # ── Validate ───────────────────────────────────────────────────────────────────
 
 @router.post("/validate")
-async def validate_provider(body: ValidateProviderRequest):
+async def validate_provider(
+    body: ValidateProviderRequest,
+    user=Depends(get_current_user),
+):
     """
     Test om en nøgle/endpoint virker uden at gemme den.
     Sender en minimal API-forespørgsel og returnerer om den lykkedes.

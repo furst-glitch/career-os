@@ -159,7 +159,7 @@ async def analyze_document(
         logger.error(
             "document_intelligence_failed document=%s error=%s", document_id, exc
         )
-        raise HTTPException(500, detail=f"Analysis pipeline failed: {exc}")
+        raise HTTPException(500, detail="Dokumentanalyse fejlede — prøv igen")
 
     return AnalyzeResponse(
         extraction_run_id=summary.extraction_run_id,

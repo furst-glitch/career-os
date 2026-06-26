@@ -135,7 +135,8 @@ async def salary_check(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "salary_check",
                    f"Løntjek — {body.title}", body.model_dump(), result.content)
@@ -164,7 +165,8 @@ async def career_value(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "career_value", "Karriereværdi", {}, result.content)
     return {
@@ -203,7 +205,8 @@ async def contract_analysis(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "contract_analysis",
                    f"Kontrakt — {file.filename}", {"file_name": file.filename}, result.content)
@@ -247,7 +250,8 @@ async def agreement_analysis(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "agreement_analysis",
                    f"Overenskomst — {contract_file.filename}", {"mode": mode}, result.content)
@@ -295,7 +299,8 @@ async def payslip_check(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "payslip_check",
                    f"Lønseddel — {payslip_file.filename}", {}, result.content)
@@ -333,7 +338,8 @@ async def worktime_check(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Analyse fejlede: {exc}")
+        logger.error("labor_coach_analyse_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Analyse fejlede — prøv igen")
 
     _save_analysis(supabase, user["id"], "worktime_check",
                    f"Arbejdstid — {schedule_file.filename}", {}, result.content)
@@ -448,7 +454,8 @@ async def salary_prep_generate(
     except NoProviderKeyError as exc:
         raise HTTPException(402, {"error": "no_api_key", "message": str(exc)})
     except Exception as exc:
-        raise HTTPException(500, f"Generering fejlede: {exc}")
+        logger.error("labor_coach_generate_failed user=%s error=%s", user["id"], exc, exc_info=True)
+        raise HTTPException(500, "Generering fejlede — prøv igen")
 
     # Gem session
     session_data = {

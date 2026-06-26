@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -411,9 +412,204 @@ function DokumenterTab() {
   );
 }
 
+// ── Billing Tab ───────────────────────────────────────────────────────────────
+
+type PlanInfo = {
+  name: string;
+  price_dkk: number | null;
+  interval: string | null;
+  features: string[];
+  stripe_price_id: string | null;
+};
+
+type SubscriptionData = {
+  plan: string;
+  status: string;
+  current_period_end: string | null;
+  has_stripe_subscription: boolean;
+  ai_budget: {
+    monthly_limit_usd: number;
+    current_spend_usd: number;
+    warning_threshold: number;
+    hard_limit: boolean;
+    period_reset_at: string | null;
+  };
+  plan_features: PlanInfo;
+};
+
+function BillingTab() {
+  const searchParams = useSearchParams();
+  const [sub, setSub] = useState<SubscriptionData | null>(null);
+  const [plans, setPlans] = useState<Record<string, PlanInfo>>({});
+  const [loading, setLoading] = useState(true);
+  const [upgrading, setUpgrading] = useState<string | null>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (searchParams.get("success") === "1") setNotice("Abonnement aktiveret — tak!");
+    if (searchParams.get("canceled") === "1") setNotice("Checkout annulleret — ingen ændringer.");
+  }, [searchParams]);
+
+  useEffect(() => {
+    Promise.all([
+      apiGet<SubscriptionData>("/billing/subscription"),
+      apiGet<{ plans: Record<string, PlanInfo> }>("/billing/plans"),
+    ])
+      .then(([s, { plans: p }]) => { setSub(s); setPlans(p); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function upgrade(planKey: string) {
+    setUpgrading(planKey);
+    try {
+      const { checkout_url } = await apiPost<{ checkout_url: string }>("/billing/create-checkout", { plan: planKey });
+      window.location.href = checkout_url;
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Checkout fejlede");
+      setUpgrading(null);
+    }
+  }
+
+  async function openPortal() {
+    setOpeningPortal(true);
+    try {
+      const { portal_url } = await apiPost<{ portal_url: string }>("/billing/create-portal", {});
+      window.location.href = portal_url;
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Portal fejlede");
+      setOpeningPortal(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-32 items-center justify-center">
+        <svg className="h-6 w-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+    );
+  }
+
+  const budget = sub?.ai_budget;
+  const spendPct = budget ? Math.min(100, Math.round((budget.current_spend_usd / budget.monthly_limit_usd) * 100)) : 0;
+  const isFreePlan = !sub || sub.plan === "free";
+  const STATUS_LABEL: Record<string, string> = {
+    active: "Aktiv", trialing: "Prøveperiode", past_due: "Betaling forfalden", canceled: "Opsagt",
+  };
+
+  return (
+    <div className="space-y-6">
+      {notice && (
+        <div className={`rounded-lg border p-4 text-sm font-medium ${notice.includes("tak") ? "border-green-200 bg-green-50 text-green-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+          {notice}
+        </div>
+      )}
+
+      {/* Aktuel plan */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Aktuel plan</span>
+            <span className={`rounded-full px-3 py-0.5 text-xs font-medium ${isFreePlan ? "bg-slate-100 text-slate-600" : "bg-blue-100 text-blue-700"}`}>
+              {sub?.plan_features?.name ?? "Free"}
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <div className="mt-4 space-y-3">
+          {sub && sub.status !== "active" && (
+            <p className="text-sm font-medium text-amber-600">
+              Status: {STATUS_LABEL[sub.status] ?? sub.status}
+            </p>
+          )}
+          {sub?.current_period_end && (
+            <p className="text-xs text-slate-500">
+              Næste faktura: {new Date(sub.current_period_end).toLocaleDateString("da-DK")}
+            </p>
+          )}
+          <ul className="space-y-1">
+            {(sub?.plan_features?.features ?? []).map((f) => (
+              <li key={f} className="flex items-center gap-2 text-sm text-slate-700">
+                <span className="text-green-500">✓</span> {f}
+              </li>
+            ))}
+          </ul>
+          {sub?.has_stripe_subscription && (
+            <Button variant="secondary" loading={openingPortal} onClick={openPortal}>
+              Administrér abonnement
+            </Button>
+          )}
+        </div>
+      </Card>
+
+      {/* AI-forbrug */}
+      {budget && (
+        <Card>
+          <CardHeader><CardTitle>AI-forbrug denne måned</CardTitle></CardHeader>
+          <div className="mt-4 space-y-3">
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>${budget.current_spend_usd.toFixed(3)} brugt</span>
+              <span>Grænse: ${budget.monthly_limit_usd.toFixed(2)}</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-full rounded-full transition-all ${spendPct > 90 ? "bg-red-500" : spendPct > 70 ? "bg-amber-500" : "bg-blue-500"}`}
+                style={{ width: `${spendPct}%` }}
+              />
+            </div>
+            {budget.hard_limit && (
+              <p className="text-xs font-medium text-red-600">AI-grænse nået — opgrader for at fortsætte</p>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Plansammenligning */}
+      {isFreePlan && (
+        <div className="space-y-3">
+          <h3 className="font-semibold text-slate-800">Opgrader din plan</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {(["pro", "professional"] as const).map((key) => {
+              const p = plans[key];
+              if (!p) return null;
+              return (
+                <div key={key} className="rounded-lg border border-slate-200 p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">{p.name}</span>
+                    <span className="text-slate-600 text-sm">
+                      {p.price_dkk != null ? `${p.price_dkk} kr/md` : "Kontakt os"}
+                    </span>
+                  </div>
+                  <ul className="space-y-1">
+                    {p.features.map((f) => (
+                      <li key={f} className="flex items-center gap-2 text-xs text-slate-600">
+                        <span className="text-blue-500">✓</span> {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className="w-full"
+                    loading={upgrading === key}
+                    disabled={!!upgrading || !p.stripe_price_id}
+                    onClick={() => upgrade(key)}
+                  >
+                    {p.stripe_price_id ? `Vælg ${p.name}` : "Kommer snart"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = "job" | "ai" | "keys" | "docs";
+type Tab = "job" | "ai" | "keys" | "docs" | "billing";
 
 export default function SettingsPage() {
   const [tab, setTab]       = useState<Tab>("job");
@@ -466,16 +662,17 @@ export default function SettingsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Indstillinger</h1>
           <p className="mt-1 text-sm text-slate-500">Dine karrierepræferencer bruges af alle agenter til personaliserede anbefalinger</p>
         </div>
-        {tab !== "keys" && tab !== "docs" && <Button loading={saving} onClick={save}>Gem præferencer</Button>}
+        {tab !== "keys" && tab !== "docs" && tab !== "billing" && <Button loading={saving} onClick={save}>Gem præferencer</Button>}
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
         {([
-          { key: "job",  label: "Jobpræferencer" },
-          { key: "ai",   label: "AI-præferencer" },
-          { key: "keys", label: "API-nøgler" },
-          { key: "docs", label: "Layout" },
+          { key: "job",     label: "Jobpræferencer" },
+          { key: "ai",      label: "AI-præferencer" },
+          { key: "keys",    label: "API-nøgler" },
+          { key: "docs",    label: "Layout" },
+          { key: "billing", label: "Abonnement" },
         ] as { key: Tab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${
@@ -630,7 +827,10 @@ export default function SettingsPage() {
       {/* ── Layout ── */}
       {tab === "docs" && <DokumenterTab />}
 
-      {tab !== "keys" && tab !== "docs" && (
+      {/* ── Billing ── */}
+      {tab === "billing" && <BillingTab />}
+
+      {tab !== "keys" && tab !== "docs" && tab !== "billing" && (
         <div className="flex justify-end border-t border-slate-100 pt-4">
           <Button loading={saving} onClick={save}>Gem præferencer</Button>
         </div>

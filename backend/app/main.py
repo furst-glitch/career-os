@@ -1,8 +1,10 @@
 import logging
 import logging.config
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -92,19 +94,43 @@ import time
 
 
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def attach_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = request_id
     start = time.monotonic()
     response = await call_next(request)
     duration_ms = round((time.monotonic() - start) * 1000)
+    response.headers["X-Request-ID"] = request_id
     if request.url.path != "/health":
         logger.info(
-            '{"method":"%s","path":"%s","status":%d,"ms":%d}',
+            "http method=%s path=%s status=%d ms=%d request_id=%s",
             request.method,
             request.url.path,
             response.status_code,
             duration_ms,
+            request_id,
         )
     return response
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", "unknown")
+    logger.error(
+        "unhandled_exception method=%s path=%s request_id=%s error=%s",
+        request.method,
+        request.url.path,
+        request_id,
+        exc,
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Der opstod en uventet fejl. Kontakt support hvis problemet gentager sig.",
+            "request_id": request_id,
+        },
+    )
 
 app.include_router(api_router, prefix="/api/v1")
 

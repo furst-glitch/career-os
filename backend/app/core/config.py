@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Stripe
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_price_pro: str = ""
+    stripe_price_professional: str = ""
+    stripe_price_enterprise: str = ""
+
+    # Frontend URL (til Stripe redirect)
+    frontend_url: str = "http://localhost:3000"
 
     # Redis — valgfri; in-memory fallback bruges hvis ikke sat
     redis_url: str | None = None
