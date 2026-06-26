@@ -52,6 +52,10 @@ def _extract_text(file_bytes: bytes, filename: str) -> str:
                 pages = [page.extract_text() or "" for page in pdf.pages]
             return "\n".join(p for p in pages if p.strip())
         elif name.endswith(".docx"):
+            # DOCX er et ZIP-arkiv — validér magic bytes (PK\x03\x04) inden parsing
+            if not file_bytes.startswith(b"PK\x03\x04"):
+                logger.warning("invalid_docx_magic_bytes file=%s", filename)
+                return ""
             import docx
             doc = docx.Document(io.BytesIO(file_bytes))
             return "\n".join(p.text for p in doc.paragraphs if p.text.strip())

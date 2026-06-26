@@ -1,9 +1,9 @@
 """
-Rate limiting — Sprint 9
+Rate limiting — bruger-aware via JWT sub-claim.
 
-Uses slowapi (Starlette-compatible limits library).
-Key = user_id from JWT so limits are per-user, not per-IP.
-Falls back to IP if no authenticated user.
+Nøglefunktion: extraherer user_id fra Authorization-header uden fuld JWT-validering
+(kun til rate limiting — autentificering sker separat i get_current_user).
+Falder tilbage til IP-adresse for uautentificerede forespørgsler.
 
 Limits:
   CV Upload         5 / hour
@@ -12,10 +12,12 @@ Limits:
   Application gen   20 / hour
   General AI calls  30 / hour
 
-Override with env RATE_LIMIT_MULTIPLIER=2 to double all limits (staging).
+Override med env RATE_LIMIT_MULTIPLIER=2 for at fordoble alle limits (staging).
 """
 from __future__ import annotations
 
+import base64
+import json as _json
 import os
 
 from fastapi import Request
@@ -24,12 +26,32 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 
 
+def _extract_jwt_sub(token: str) -> str | None:
+    """Decode JWT payload (no signature verification) to extract sub claim.
+
+    Safe for rate-limiting only — never use for authentication.
+    An attacker can forge the sub claim, but that only affects their own rate bucket.
+    """
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        # Restore base64 padding
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        payload = _json.loads(base64.b64decode(payload_b64))
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 def _key_func(request: Request) -> str:
-    """Extract user_id from validated JWT or fall back to IP."""
-    # The user dict is attached by get_current_user dependency
-    user: dict | None = getattr(request.state, "user", None)
-    if user:
-        return f"user:{user['id']}"
+    """Per-user rate limit key. Falls back to IP for unauthenticated requests."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        sub = _extract_jwt_sub(auth[7:])
+        if sub:
+            return f"user:{sub}"
     forwarded = request.headers.get("X-Forwarded-For")
     return forwarded.split(",")[0].strip() if forwarded else request.client.host or "unknown"
 

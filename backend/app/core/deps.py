@@ -43,15 +43,19 @@ def require_plan(minimum_plan: str):
         user: dict = Depends(get_current_user),
         supabase: Client = Depends(get_supabase_admin),
     ) -> dict:
-        result = (
-            supabase.table("subscriptions")
-            .select("plan")
-            .eq("user_id", user["id"])
-            .single()
-            .execute()
-        )
-
-        user_plan = result.data.get("plan", "free") if result.data else "free"
+        # Brug limit(1) i stedet for .single() — .single() kaster exception ved 0 rækker
+        # (kan ske ved race conditions under brugeroprettelse eller manuelle sletninger)
+        try:
+            result = (
+                supabase.table("subscriptions")
+                .select("plan")
+                .eq("user_id", user["id"])
+                .limit(1)
+                .execute()
+            )
+            user_plan = result.data[0]["plan"] if result.data else "free"
+        except Exception:
+            user_plan = "free"
 
         if PLAN_HIERARCHY.get(user_plan, 0) < PLAN_HIERARCHY.get(minimum_plan, 0):
             raise HTTPException(
