@@ -71,21 +71,29 @@ class BaseAgent(ABC):
         ).execute()
         return (result.data if result else None) or ""
 
+    _VALID_PROVIDERS = frozenset({"openai", "anthropic", "ollama", "custom"})
+
     async def log_usage(self, usage: AgentUsage, operation: str = "", used_user_key: bool = False) -> None:
+        # Normalisér provider til gyldige enum-værdier — LiteLLM kan returnere
+        # "unknown" eller andre strenge der ikke matcher ai_provider-enum (22P02).
+        provider = usage.provider if usage.provider in self._VALID_PROVIDERS else "custom"
         agent_id = self.config.get("id")
-        self.supabase.table("ai_usage").insert({
-            "user_id": self.user_id,
-            "agent_id": agent_id,
-            "provider": usage.provider,
-            "model": usage.model,
-            "operation": operation or self.name,
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-            "cost_usd": usage.cost_usd,
-            "latency_ms": usage.latency_ms,
-            "used_user_key": used_user_key,
-        }).execute()
+        try:
+            self.supabase.table("ai_usage").insert({
+                "user_id": self.user_id,
+                "agent_id": agent_id,
+                "provider": provider,
+                "model": usage.model,
+                "operation": operation or self.name,
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "cost_usd": usage.cost_usd,
+                "latency_ms": usage.latency_ms,
+                "used_user_key": used_user_key,
+            }).execute()
+        except Exception as exc:
+            logger.warning("log_usage_failed agent=%s error=%s", self.name, exc)
 
     # ── AI Gateway integration (Sprint 5) ─────────────────────────────────
 
